@@ -50,6 +50,13 @@
     ############################################################################
     display_msg "Starting networking ..."
     io-sock -m phy -m fdt -d vtnet_mmio
+    waitfor /dev/socket 10
+
+    # The other end of the host's vp0. The host routes and NATs this network,
+    # so it is also the default gateway -- see .vdev_net_start.sh and pf.conf
+    # in the host image.
+    ifconfig vtnet0 @QNX_GUEST_IP@ netmask 255.255.255.0 up
+    route add default @QNX_GUEST_GATEWAY@
 
     ############################################################################
     ## Applications, ordered by QNX_IFS_STARTUP_PRIORITY.

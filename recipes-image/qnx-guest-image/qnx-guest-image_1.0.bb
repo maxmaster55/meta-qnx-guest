@@ -29,5 +29,10 @@ QNX_IFS_INSTALL = "spi-loopback frame-router rpi-gpio"
 # loc 0x20000000 / intr gic:42" in this guest's .qvmconf.
 QNX_GUEST_CONSOLE ?= "0x20000000,42"
 
+# The other end of the host's vp0 interface. The host's QNX_HOST_GUEST_IP is
+# this guest's gateway, and its QNX_HOST_GUEST_NET has to contain this address.
+QNX_GUEST_IP ?= "10.0.0.2"
+QNX_GUEST_GATEWAY ?= "10.0.0.1"
+
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"
