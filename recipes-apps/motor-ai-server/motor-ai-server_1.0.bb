@@ -1,26 +1,24 @@
-SUMMARY = "CommonAPI/SOME/IP motor data client"
-DESCRIPTION = "Guest-side client that talks to motor_ai_server over SOME/IP. Its \
-CMakeLists runs the CommonAPI generators at configure time to turn the \
-.fidl/.fdepl interface definitions into C++ bindings, then builds them alongside \
-the client."
+SUMMARY = "CommonAPI/SOME/IP motor data service"
+DESCRIPTION = "Serves motor telemetry over SOME/IP. Its CMakeLists runs the \
+CommonAPI generators at configure time to turn the .fidl/.fdepl interface \
+definitions into C++ bindings, then builds them alongside the service."
 LICENSE = "CLOSED"
 
 inherit qnx-cmake qnx-src
 
-QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/motor_ai_client.git;protocol=ssh;branch=main"
+QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/motor_ai_server.git;protocol=ssh;branch=main"
 
 # The runtimes it links against, and the generators it runs. The generators are
-# native: x86_64 host tools that produce source, not target binaries.
-DEPENDS = "commonapi-someip commonapi-core vsomeip boost commonapi-generators-native \
-           motor-data-producer"
+# native: they are x86_64 host tools that produce source, not target binaries.
+DEPENDS = "commonapi-someip commonapi-core vsomeip boost commonapi-generators-native"
 
 # The QNX byte-order and narrowing settings the whole SOME/IP stack needs; the
 # generated CommonAPI code pulls in the same headers the runtimes do.
 require recipes-someip/someip-qnx-flags.inc
 
-# The client lives in client/, but its CMakeLists reaches ../interface for the
+# The service lives in server/, but its CMakeLists reaches ../interface for the
 # .fidl definitions, so the repository root has to be the source directory.
-OECMAKE_SOURCEPATH = "${S}/client"
+OECMAKE_SOURCEPATH = "${S}/server"
 
 # Upstream looks for its dependencies under one output directory: lib/ for the
 # libraries and generators/{core,someip}/ for the code generators. Neither
@@ -38,17 +36,17 @@ do_configure:prepend() {
 	ln -sfn ${STAGING_DATADIR_NATIVE}/commonapi-generators/someip ${QNX_SOMEIP_SHIM}/generators/someip
 }
 
-# These land in /Motor_AI_Client and /etc, neither of which mkifs searches by
+# These land in /Motor_AI_Server and /etc, neither of which mkifs searches by
 # bare name, so the automatic pass is turned off and the records are written
 # out. The destinations match the project's own guest build files.
 QNX_IFS_AUTO_ENTRIES = "0"
 
-QNX_MOTOR_AI_DIR = "${QNX_STAGE_DIR}/motor-ai-client"
+QNX_MOTOR_AI_DIR = "${QNX_STAGE_DIR}/motor-ai-server"
 
 do_install() {
 	install -d ${D}${QNX_MOTOR_AI_DIR}
-	install -m 0755 ${B}/MotorDataClient ${D}${QNX_MOTOR_AI_DIR}/motor_ai_client
-	install -m 0644 ${S}/client/vsomeip_multicast.json ${D}${QNX_MOTOR_AI_DIR}/vsomeip.json
+	install -m 0755 ${B}/MotorDataService ${D}${QNX_MOTOR_AI_DIR}/motor_ai_server
+	install -m 0644 ${S}/server/vsomeip_multicast.json ${D}${QNX_MOTOR_AI_DIR}/vsomeip.json
 	install -m 0644 ${S}/interface/commonapi4someip.ini ${D}${QNX_MOTOR_AI_DIR}/commonapi.ini
 }
 
@@ -60,9 +58,9 @@ do_install() {
 # they can share an image, and mkifs treats a redefined entry as an error. The
 # file is the same CommonAPI binding configuration either way.
 QNX_IFS_EXTRA_ENTRIES = "\
-/Motor_AI_Client/motor_ai_client=@QNX_IFS_ROOT@/motor-ai-client/motor_ai_client\n\
-/Motor_AI_Client/vsomeip.json=@QNX_IFS_ROOT@/motor-ai-client/vsomeip.json\n\
-[+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\
+/Motor_AI_Server/motor_ai_server=@QNX_IFS_ROOT@/motor-ai-server/motor_ai_server\n\
+/Motor_AI_Server/vsomeip.json=@QNX_IFS_ROOT@/motor-ai-server/vsomeip.json\n\
+[+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-server/commonapi.ini\
 "
 
 # Started by hand, as in the project's own guest images.

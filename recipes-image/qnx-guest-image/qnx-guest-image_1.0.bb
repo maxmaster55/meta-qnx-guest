@@ -16,7 +16,17 @@ QNX_IFS_TEMPLATE = "${S}/qnx-guest.build.in"
 
 # frame-router and rpi-gpio come from meta-qnx-hyp: they are built once and go
 # into both the host and its guests.
-QNX_IFS_INSTALL = "spi-loopback frame-router rpi-gpio"
+QNX_IFS_INSTALL = "spi-loopback frame-router rpi-gpio \
+                   motor-ai-client motor-ai-server \
+                   commonapi-someip commonapi-core vsomeip boost"
+
+# The SOME/IP runtimes are listed explicitly because the applications link
+# against them: an image with motor_ai_client but no libCommonAPI.so has a
+# binary that cannot load. ~9.5MB, which an IFS can carry.
+#
+# The project keeps these on the guest's rootfs.img instead, and that becomes
+# the right answer once Qt is in the picture -- an IFS is RAM-resident, and the
+# Qt deploy tree is far too large for one.
 
 # ---------------------------------------------------------------------------
 # Boot configuration
