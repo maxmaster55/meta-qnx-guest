@@ -1,0 +1,61 @@
+# qvm configuration for this guest, read by the hypervisor host.
+#
+# Modelled on qnx_guests/images/guest-1/qnx-guest-1.qvmconf, trimmed to the
+# devices the image built here actually drives.
+#
+# Every loc/intr below is a contract with the guest's startup script: the
+# addresses are arbitrary but must match on both sides, because a guest with no
+# PCI has no way to discover them. The virtio-console entry in particular must
+# agree with QNX_GUEST_CONSOLE in the image recipe.
+
+system guest_1
+
+ram 0x80000000,1G
+cpu
+
+# Relative to this file's directory, which is why the IFS is deployed beside it.
+load qnx-guest.ifs
+
+################################################################################
+# Serial. Pointed at qvm's stdout so startup output is visible before the
+# virtio console driver is up -- the startup driver writes here.
+################################################################################
+vdev pl011
+        hostdev >-
+        loc 0x1c090000
+        intr gic:37
+
+################################################################################
+# The guest's main console. Must match QNX_GUEST_CONSOLE ("0x20000000,42").
+################################################################################
+vdev virtio-console
+        loc 0x20000000
+        intr gic:42
+
+################################################################################
+# Networking to the host, over a vdevpeer the host binds with vpctl.
+################################################################################
+vdev virtio-net
+        loc 0x1c0c0000
+        intr gic:40
+        mac aa:bb:cc:dd:ee:f0
+        name guest_to_host
+        peer /dev/vdevpeers/vp0
+        peerfeats 0x00000000
+
+################################################################################
+# Shared memory, used by the frame router to pass framebuffers to the host.
+################################################################################
+vdev shmem
+        loc 0x1c050000
+        intr gic:38
+        create fb_shared,0x400000
+        allow fb_shared
+
+################################################################################
+# Entropy: without it the guest's random pool starves and anything using
+# /dev/random blocks.
+################################################################################
+vdev virtio-entropy
+        loc 0x1c0e0000
+        intr gic:44
