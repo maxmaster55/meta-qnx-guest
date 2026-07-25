@@ -12,18 +12,21 @@ bitbake spi-loopback        # SPI loopback test
 bitbake motor-ai-server     # CommonAPI/SOME-IP motor AI service (generators run at configure)
 bitbake motor-ai-client     # ...and its client
 bitbake qnx-screen-virtio   # guest-side virtio GPU driver stack (prebuilt .apk; staged, not yet imaged)
-bitbake qt6-qnx             # Qt 6.8.3 for QNX, via the monorepo's own build scripts
+bitbake qtbase qtdeclarative # Qt 6.10.3 for QNX, from stock meta-qt6
 bitbake qt-cluster          # the Qt Quick cluster app + its self-contained deploy tree
 bitbake qnx-guest-rootfs    # rootfs.img: the guest's QNX6 data disk (carries the Qt payload)
 ```
 
-`qt6-qnx` drives `src/QT/qt6-qnx-libs`'s Makefile in place, so an already-built
-`output_dir` is adopted in seconds and a clean tree downloads and builds Qt from source
-(hours). It stages the whole Qt SDK — target runtime *and* `host_qt` tools — so
-`qt-cluster` needs nothing but `DEPENDS = "qt6-qnx"`; its post-build step leaves a
-relocatable `qt-cluster/` deploy tree (`run.sh`, `appCluster`, the Qt libs/QML/plugins it
-uses, ~126 MB). Neither contributes IFS entries: the payloads belong on a mounted
-filesystem, not in RAM — which is what `qnx-guest-rootfs` is for.
+Qt comes from **stock meta-qt6**, cross-compiled for QNX by `qnx-toolchain` plus the
+bbappends in `meta-qnx/dynamic-layers/qt6-layer/` — see
+[qt6.md](../meta-qnx/docs/qt6.md). `qtbase` brings QtCore/QtGui and the QNX platform
+plugin (`libqqnx.so`, which links the SDP's `libscreen`); `qtdeclarative` brings the
+QML/Quick stack. Host tools come from `qtbase-native`, so nothing is built by hand.
+
+`qt-cluster` takes `DEPENDS = "qtbase qtdeclarative qtbase-native"` and its post-build
+step leaves a relocatable `qt-cluster/` deploy tree (`run.sh`, `appCluster`, the Qt
+libs/QML/plugins it uses). It contributes no IFS entries: the payload belongs on a
+mounted filesystem, not in RAM — which is what `qnx-guest-rootfs` is for.
 
 The SOME/IP stack beneath the motor-ai apps — `boost`, `vsomeip` (with the QNX routing
 patch), `commonapi-core`, `commonapi-someip` and the native code generators — lives in
@@ -93,7 +96,8 @@ Most recipes clone their own repository and track the branch head — see
 | `motor-ai-client` | `PM-Maestro-ITI-GP-Org/motor_ai_client` |
 | `motor-data-producer` | `Mintharah/SPI-Stm32-QNX` (branch `spi_qnx_build`) |
 | `shm-chunker` | the hypervisor monorepo, via `QNX_PROJECT_SRC` — no standalone repo yet |
-| `qt6-qnx`, `qt-cluster` | the monorepo (`src/QT/qt6-qnx-libs`, `src/qt_cluster`), via `QNX_PROJECT_SRC` — qt6-qnx stays there by design (the working tree is the 33 GB build cache) |
+| `qt-cluster` | the monorepo (`src/qt_cluster`), via `QNX_PROJECT_SRC` |
+| `qtbase`, `qtdeclarative` | stock [meta-qt6](https://code.qt.io/yocto/meta-qt6.git) (6.10 branch), unmodified |
 | `qnx-screen-virtio` | prebuilt `.apk` from repo.oss.qnx.com (`qnx-apk`) |
 
 ## Not done yet

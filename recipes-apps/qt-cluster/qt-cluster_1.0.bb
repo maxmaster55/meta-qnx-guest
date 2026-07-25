@@ -1,9 +1,9 @@
 SUMMARY = "Qt Quick instrument cluster for the QNX guest"
-DESCRIPTION = "The qt_cluster QML application. Builds against the Qt-for-QNX \
-tree staged by qt6-qnx, and its post-build step assembles a self-contained \
-deploy tree (appCluster, run.sh, the Qt libraries, QML modules, plugins and \
-fonts it actually uses) -- which is exactly the payload the guest's data \
-filesystem wants."
+DESCRIPTION = "The qt_cluster QML application. Builds against stock meta-qt6's \
+Qt, cross-compiled for QNX by qnx-toolchain, and its post-build step assembles \
+a self-contained deploy tree (appCluster, run.sh, the Qt libraries, QML modules, \
+plugins and fonts it actually uses) -- which is exactly the payload the guest's \
+data filesystem wants."
 LICENSE = "CLOSED"
 
 inherit qnx-cmake qnx-src
@@ -16,37 +16,39 @@ QNX_SRC_SUBDIR = "src/qt_cluster"
 # cmake builds out of tree, so nothing is written into the checkout.
 EXTERNALSRC_BUILD = "${WORKDIR}/build"
 
-DEPENDS = "qt6-qnx"
+# Stock meta-qt6, not the old hand-rolled qt6-qnx. qtbase brings QtCore/Gui and
+# the QNX platform plugin (libqqnx.so); qtdeclarative brings Qml/Quick, which is
+# what `find_package(Qt6 COMPONENTS Core Gui Quick)` in the app asks for.
+#
+# qtbase-native is the host-tools half -- moc, rcc, qmlcachegen must run on the
+# build host. meta-qt6's own qt6-cmake.bbclass takes exactly this dependency and
+# points QT_HOST_PATH at it; this recipe inherits qnx-cmake instead (it needs the
+# QNX toolchain file), so it does the same wiring by hand.
+DEPENDS = "qtbase qtdeclarative qtbase-native"
 
-QT6 = "${RECIPE_SYSROOT}${QNX_STAGE_DIR}/qt"
+# Where meta-qt6 stages Qt. Deliberately spelled out rather than derived: the
+# app's CMakeLists computes its deploy paths as ${Qt6_DIR}/../../.. plus
+# /qml and /plugins, which is right for a Qt installed under its own prefix
+# (what qt6-qnx produced) and wrong for meta-qt6, whose qt6-paths.bbclass puts
+# QML at ${libdir}/qml and plugins at ${libdir}/plugins. Those are all CACHE
+# PATH variables, so overriding them here is the supported way to correct it --
+# and getting it wrong does not fail the configure, it silently deploys no QML
+# and leaves the app unable to start.
+QT6_CMAKE_DIR = "${RECIPE_SYSROOT}${libdir}/cmake/Qt6"
 
-# The project's own Makefile drives this configure with Qt's generated
-# toolchain file; the recipe does the same, with two twists:
-#
-#  - everything is taken from the qt6-qnx sysroot rather than the monorepo's
-#    output_dir, so the app builds against exactly what its DEPENDS staged
-#  - qt.toolchain.cmake's baked-in chainload path points into the monorepo, so
-#    the chainload is redirected to the copy qt6-qnx staged next to it
-#
-# Passing -DCMAKE_TOOLCHAIN_FILE here overrides the one qnx-cmake generates
-# (last -D wins); Qt insists on its own toolchain file to locate host tools and
-# set the mkspec, and the chainloaded file supplies the qcc/QNX side.
-#
-# FONT_SOURCE_DIR mirrors the Makefile's qnx target: fonts are harvested from
-# the build host, and deploy_qt.cmake just warns if none are found.
 OECMAKE_EXTRA_ARGS = "\
-    -DCMAKE_TOOLCHAIN_FILE=${QT6}/lib/cmake/Qt6/qt.toolchain.cmake \
-    -DQT_CHAINLOAD_TOOLCHAIN_FILE=${QT6}/lib/cmake/toolchain_qnx_aarch64le.cmake \
-    -DQt6_DIR=${QT6}/lib/cmake/Qt6 \
-    -DQT_HOST_PATH=${QT6}/host_qt \
+    -DQt6_DIR=${QT6_CMAKE_DIR} \
+    -DQT6_LIB_DIR=${RECIPE_SYSROOT}${libdir} \
+    -DQT6_QML_DIR=${RECIPE_SYSROOT}${libdir}/qml \
+    -DQT6_PLUGIN_DIR=${RECIPE_SYSROOT}${libdir}/plugins \
+    -DQT_HOST_PATH=${RECIPE_SYSROOT_NATIVE}${prefix_native}/ \
     -DQNX_LIB_DIR=${QNX_TARGET}/${QNX_PROCESSOR} \
     -DFONT_SOURCE_DIR=/usr/share/fonts \
 "
 
-# ${QT6} contains RECIPE_SYSROOT, an absolute per-recipe path; keep it out of
-# the configure signature for the same reason qnx-sdp excludes its sysroot
-# flags.
-OECMAKE_EXTRA_ARGS[vardepsexclude] = "QT6"
+# These embed RECIPE_SYSROOT / RECIPE_SYSROOT_NATIVE, absolute per-recipe paths,
+# for the same reason qnx-sdp excludes its sysroot flags from signatures.
+OECMAKE_EXTRA_ARGS[vardepsexclude] = "QT6_CMAKE_DIR"
 
 # The POST_BUILD deploy step (deploy_qt.cmake) runs as part of do_compile and
 # leaves ${B}/deploy as a relocatable directory: run.sh sets LD_LIBRARY_PATH,
@@ -58,6 +60,12 @@ OECMAKE_EXTRA_ARGS[vardepsexclude] = "QT6"
 do_install() {
 	if [ ! -x ${B}/deploy/appCluster ]; then
 		bbfatal "no ${B}/deploy/appCluster -- the post-build deploy step did not run"
+	fi
+	# The deploy tree is useless without the QML modules; an empty qml/ means
+	# QT6_QML_DIR pointed somewhere wrong and the app would fail at startup on
+	# the board rather than here.
+	if [ ! -d ${B}/deploy/qml ] || [ -z "$(ls -A ${B}/deploy/qml 2>/dev/null)" ]; then
+		bbfatal "${B}/deploy/qml is empty -- QT6_QML_DIR did not match where meta-qt6 staged the QML modules"
 	fi
 	install -d ${D}${QNX_STAGE_DIR}/qt-cluster
 	cp -a ${B}/deploy/. ${D}${QNX_STAGE_DIR}/qt-cluster/
