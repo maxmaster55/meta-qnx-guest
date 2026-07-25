@@ -12,26 +12,10 @@
 ## QNX_IFS_INSTALL in the recipe.
 ################################################################################
 
-[-optional]
-[+keeplinked]
-[image=@QNX_IMAGE_ADDR@]
-
-[virtual=@QNX_IMAGE_VIRTUAL@] boot = {
-    @QNX_STARTUP@ @QNX_STARTUP_ARGS@
-    PATH=@QNX_IFS_PATH@ LD_LIBRARY_PATH=@QNX_IFS_LD_LIBRARY_PATH@ @QNX_KERNEL@ @QNX_KERNEL_ARGS@
-}
+#include qnx-boot.build.inc
 
 [+script] startup-script = {
-    SYSNAME=nto
-    TERM=qansi
-
-    procmgr_symlink ../../proc/boot/ldqnx-64.so.2 /usr/lib/ldqnx-64.so.2
-
-    pipe
-    slogger2
-    dumper
-    mqueue
-    random
+#include qnx-startup-preamble.build.inc
 
     ############################################################################
     ## Console. The virtio-console vdev the host gives this guest -- loc and
@@ -59,7 +43,18 @@
     route add default @QNX_GUEST_GATEWAY@
 
     ############################################################################
-    ## Applications, ordered by QNX_IFS_STARTUP_PRIORITY.
+    ## Data disk (rootfs.img) -- union-mounted at /.
+    ##
+    ## Everything too large for this RAM-resident IFS lives on a virtio-blk disk
+    ## the host attaches: the Qt cluster deploy tree today, the graphics stack
+    ## and SOME/IP libraries as they come online. Mounted here, before any of it
+    ## is used, so every path resolves as if the files were baked into the image.
+    ## A guest booted without the disk present logs an error and carries on.
+    ############################################################################
+    /proc/boot/.rootfs-mount.sh
+
+    ############################################################################
+    ## Applications, ordered by QNX_IFS_STARTUP_AFTER dependencies.
     ############################################################################
 @QNX_IFS_STARTUP@
 
@@ -69,11 +64,36 @@
 
 [uid=0 gid=0]
 
-[type=link] /bin/sh=/bin/ksh
-[type=link] /tmp=/dev/shmem
-[type=link] /dev/console=/dev/vcon1
-[type=link] /var/log=/tmp
-[type=link] /usr/tmp=/tmp
+################################################################################
+## Mount the guest data disk (rootfs.img) at /.
+##
+## rootfs.img is attached by qnx-guest.qvmconf as a virtio-blk vdev. smem= and
+## irq= here MUST match that vdev's loc/intr (0x1c0b0000 / gic:45). The whole
+## device is the filesystem -- there is no partition table -- so it is mounted
+## as /dev/vblk0 directly, not a /dev/vblk0tNNN partition.
+##
+## An external file would need a repo path; this is short and self-contained, so
+## it is written inline. It contains no '}' or '${...}', which an inline mkifs
+## block cannot carry.
+################################################################################
+[perms=0744] /proc/boot/.rootfs-mount.sh = {
+#!/bin/ksh
+echo "Starting virtio block driver for the data disk ..."
+devb-virtio virtio smem=0x1c0b0000,irq=45 disk name=vblk
+
+if waitfor /dev/vblk0 10
+then
+    mount -t qnx6 /dev/vblk0 /
+    if test -f /qt-cluster/run.sh
+    then
+        echo "Data disk mounted at / (Qt cluster and payloads available)"
+    else
+        echo "ERROR: data disk mounted but /qt-cluster is missing -- rebuild rootfs.img"
+    fi
+else
+    echo "ERROR: /dev/vblk0 never appeared -- is rootfs.img present next to the .qvmconf?"
+fi
+}
 
 ################################################################################
 ## Applications -- generated from QNX_IFS_INSTALL.
@@ -81,7 +101,9 @@
 @QNX_IFS_FILES@
 
 ################################################################################
-## Virtio drivers: this is how a guest sees the world.
+## Virtio drivers: this is how a guest sees the world. These three are the only
+## thing that makes the shared block and network stacks below usable here -- a
+## guest has no real hardware, so every device is a vdev the host provides.
 ################################################################################
 /sbin/devc-virtio=devc-virtio
 /sbin/devb-virtio=devb-virtio
@@ -89,25 +111,10 @@
 # the io-pkt naming.
 /lib/dll/devs-vtnet_mmio.so=devs-vtnet_mmio.so
 
-/lib/libcam.so=libcam.so
-/lib/dll/io-blk.so=io-blk.so
-/lib/dll/cam-disk.so=cam-disk.so
-/lib/dll/fs-qnx6.so=fs-qnx6.so
-
 ################################################################################
-## Networking
+## The rest of the block stack, the network stack, and the base filesystem
+## layout and utilities -- all identical to the host image, so all shared.
 ################################################################################
-/sbin/io-sock=io-sock
-/sbin/ifconfig=ifconfig
-/sbin/route=route
-[+optional] /sbin/dhcpcd=dhcpcd
-
-################################################################################
-## Base utilities. ls/cat/uname and friends arrive via toybox in the generated
-## section above -- QNX 8 ships no standalone versions of them.
-################################################################################
-/bin/ksh=ksh
-/bin/pidin=pidin
-/bin/waitfor=waitfor
-/bin/slay=slay
-/bin/mount=mount
+#include qnx-block.build.inc
+#include qnx-net.build.inc
+#include qnx-base.build.inc

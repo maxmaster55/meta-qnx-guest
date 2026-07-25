@@ -1,0 +1,30 @@
+################################################################################
+## Guest data disk (rootfs.img) -- mkqnx6fsimg TEMPLATE.
+##
+## A bare QNX6 filesystem the guest union-mounts at / over its RAM-resident IFS,
+## via /proc/boot/.rootfs-mount.sh. The Yocto equivalent of
+## qnx_guests/images/guest-1/rootfs.build.
+##
+## Everything here maps a staged tree (under @QNX_ROOTFS_SYSROOT@, filled by the
+## recipe's QNX_ROOTFS_INSTALL) onto the target path the guest expects it at.
+################################################################################
+
+[num_sectors=@QNX_ROOTFS_SECTORS@]
+[num_inodes=@QNX_ROOTFS_INODES@]
+[blksize=@QNX_ROOTFS_BLKSIZE@]
+
+[uid=0 gid=0 perms=0755]
+
+################################################################################
+## Qt Quick cluster -- the whole self-contained deploy tree (appCluster, run.sh,
+## and the Qt libraries / QML modules / plugins / fonts it actually uses). Its
+## run.sh resolves its own directory, so the tree relocates cleanly to /qt-cluster.
+## Launch it from the guest with:  /qt-cluster/run.sh
+################################################################################
+/qt-cluster=@QNX_ROOTFS_SYSROOT@/qt-cluster
+
+################################################################################
+## Contributed by QNX_ROOTFS_EXTRA -- the graphics stack and SOME/IP libraries
+## land here as they come online. Empty unless something sets it.
+################################################################################
+@QNX_ROOTFS_EXTRA@

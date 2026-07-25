@@ -14,19 +14,26 @@ B = "${WORKDIR}/build"
 QNX_IFS_NAME = "qnx-guest"
 QNX_IFS_TEMPLATE = "${S}/qnx-guest.build.in"
 
-# frame-router and rpi-gpio come from meta-qnx-hyp: they are built once and go
-# into both the host and its guests.
-QNX_IFS_INSTALL = "spi-loopback frame-router rpi-gpio \
-                   motor-ai-client motor-ai-server \
-                   commonapi-someip commonapi-core vsomeip boost"
-
-# The SOME/IP runtimes are listed explicitly because the applications link
-# against them: an image with motor_ai_client but no libCommonAPI.so has a
-# binary that cannot load. ~9.5MB, which an IFS can carry.
+# Two of these are groups rather than single recipes (qnx-packagegroup.bbclass),
+# expanded to their members when the image is generated:
 #
-# The project keeps these on the guest's rootfs.img instead, and that becomes
-# the right answer once Qt is in the picture -- an IFS is RAM-resident, and the
-# Qt deploy tree is far too large for one.
+#   packagegroup-qnx-hyp-common  frame-router, rpi-gpio -- shared with the host
+#                                image, which installs the same group. The two
+#                                images can no longer disagree about what
+#                                "shared" means.
+#   packagegroup-qnx-someip      vsomeip, the CommonAPI runtimes and boost. The
+#                                applications link against them, so an image
+#                                with motor_ai_client but no libCommonAPI.so has
+#                                a binary that cannot load. ~9.5MB, which an IFS
+#                                can carry.
+#
+# The project keeps the SOME/IP runtime on the guest's rootfs.img instead, and
+# that becomes the right answer once Qt is in the picture -- an IFS is
+# RAM-resident, and the Qt deploy tree is far too large for one. Moving it is
+# then one line: the same group name, in QNX_ROOTFS_INSTALL instead.
+QNX_IFS_INSTALL = "spi-loopback packagegroup-qnx-hyp-common \
+                   motor-ai-client motor-ai-server \
+                   packagegroup-qnx-someip"
 
 # ---------------------------------------------------------------------------
 # Boot configuration

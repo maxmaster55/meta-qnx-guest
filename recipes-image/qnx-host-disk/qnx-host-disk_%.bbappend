@@ -20,12 +20,26 @@ SRC_URI += "file://qnx-guest.qvmconf"
 
 QNX_GUEST_NAME ?= "guest-1"
 
+# Everything the guest needs lands in /guests/<name>/, the directory qvm is
+# launched from on the host:
+#   qnx-guest.ifs       the guest image
+#   qnx-guest.qvmconf   its vdev configuration
+#   rootfs.img          the data disk the qvmconf attaches (Qt + large payloads)
+#
 # The data partition is built by mkqnx6fsimg, which resolves these sources
 # itself, so absolute paths are used rather than bare names.
 QNX_DISK_DATA_EXTRA += "\
 /guests/${QNX_GUEST_NAME}/qnx-guest.ifs = ${DEPLOY_DIR_IMAGE}/qnx-guest.ifs\n\
-/guests/${QNX_GUEST_NAME}/qnx-guest.qvmconf = ${WORKDIR}/qnx-guest.qvmconf\
+/guests/${QNX_GUEST_NAME}/qnx-guest.qvmconf = ${WORKDIR}/qnx-guest.qvmconf\n\
+/guests/${QNX_GUEST_NAME}/rootfs.img = ${DEPLOY_DIR_IMAGE}/rootfs.img\
 "
 
-# The guest image has to be deployed before this disk can read it.
-do_generate_diskfiles[depends] += "qnx-guest-image:do_deploy"
+# Both guest artifacts must be deployed before this disk can read them.
+do_generate_diskfiles[depends] += "qnx-guest-image:do_deploy qnx-guest-rootfs:do_deploy"
+
+# meta-qnx-hyp fixes the data partition at 512M, which suited a guestless disk.
+# Adding the ~366 MB rootfs.img (and, later, the graphics stack) makes a fixed
+# size a maintenance burden, so size it from what actually goes on it. "auto"
+# sums the guest IFS, the qvmconf and rootfs.img and adds slack; pin it larger
+# in local.conf if the guest needs runtime write headroom on the data partition.
+QNX_DISK_DATA_SIZE = "auto"

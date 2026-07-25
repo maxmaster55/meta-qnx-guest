@@ -7,9 +7,53 @@ come from [meta-qnx-hyp](../meta-qnx-hyp).
 ## What it builds
 
 ```bash
-bitbake qnx-guest-image     # a bootable guest IFS
+bitbake qnx-guest-image     # a bootable guest IFS: apps + the SOME/IP runtimes
 bitbake spi-loopback        # SPI loopback test
+bitbake motor-ai-server     # CommonAPI/SOME-IP motor AI service (generators run at configure)
+bitbake motor-ai-client     # ...and its client
+bitbake qnx-screen-virtio   # guest-side virtio GPU driver stack (prebuilt .apk; staged, not yet imaged)
+bitbake qt6-qnx             # Qt 6.8.3 for QNX, via the monorepo's own build scripts
+bitbake qt-cluster          # the Qt Quick cluster app + its self-contained deploy tree
+bitbake qnx-guest-rootfs    # rootfs.img: the guest's QNX6 data disk (carries the Qt payload)
 ```
+
+`qt6-qnx` drives `src/QT/qt6-qnx-libs`'s Makefile in place, so an already-built
+`output_dir` is adopted in seconds and a clean tree downloads and builds Qt from source
+(hours). It stages the whole Qt SDK — target runtime *and* `host_qt` tools — so
+`qt-cluster` needs nothing but `DEPENDS = "qt6-qnx"`; its post-build step leaves a
+relocatable `qt-cluster/` deploy tree (`run.sh`, `appCluster`, the Qt libs/QML/plugins it
+uses, ~126 MB). Neither contributes IFS entries: the payloads belong on a mounted
+filesystem, not in RAM — which is what `qnx-guest-rootfs` is for.
+
+The SOME/IP stack beneath the motor-ai apps — `boost`, `vsomeip` (with the QNX routing
+patch), `commonapi-core`, `commonapi-someip` and the native code generators — lives in
+[`recipes-someip/`](recipes-someip/) and builds through plain `DEPENDS`.
+
+## The guest data disk
+
+An IFS is copied into guest RAM whole at boot, so the Qt payload (and, later, the graphics
+stack) cannot live in it. `qnx-guest-rootfs` builds `rootfs.img` — a bare QNX6 filesystem
+(via meta-qnx's `qnx-rootfs` class) carrying `qt-cluster`'s deploy tree at `/qt-cluster` —
+and three pieces wire it into a running guest, mirroring
+`qnx_guests/images/guest-1/`:
+
+1. **The guest `.qvmconf`** attaches it as a `virtio-blk` vdev (`loc 0x1c0b0000`,
+   `intr gic:45`, `hostdev rootfs.img`).
+2. **The guest boot script** (`qnx-guest.build.in`) carries an inline `.rootfs-mount.sh`
+   that starts `devb-virtio` against that vdev and `mount -t qnx6 /dev/vblk0 /` early, so
+   `/qt-cluster/run.sh` resolves. A guest booted without the disk logs an error and
+   continues.
+3. **The `qnx-host-disk` bbappend** places `rootfs.img` next to the guest IFS and
+   `.qvmconf` at `/guests/guest-1/` on the host data partition, and switches that partition
+   to `auto` sizing so it grows to hold the ~366 MB image.
+
+Add the graphics stack (`qnx-screen-virtio`) or the SOME/IP libraries to the disk by adding
+them to `QNX_ROOTFS_INSTALL` in `qnx-guest-rootfs`, and routing them in its template.
+
+This layer also **bbappends `qnx-host-disk`** (from meta-qnx-hyp) to place all of the guest
+artifacts on the host's QNX6 data partition — the same paths the hypervisor project uses.
+The append keeps the layer dependency pointing one way: a build without this layer just
+produces a disk with no guests.
 
 ## Why this layer is so small
 
@@ -39,30 +83,30 @@ layers depending on it.
 
 ## Application sources
 
-Each recipe clones its own repository and tracks the branch head — see
+Most recipes clone their own repository and track the branch head — see
 [meta-qnx/docs/variables.md](../meta-qnx/docs/variables.md) for `QNX_SRC_*`.
 
 | Recipe | Source |
 | --- | --- |
 | `spi-loopback` | `PM-Maestro-ITI-GP-Org/spi_loopback` |
-| `motor-ai-client` | `PM-Maestro-ITI-GP-Org/motor_ai_client` — **blocked**, see below |
+| `motor-ai-server` | `PM-Maestro-ITI-GP-Org/motor_ai_server` |
+| `motor-ai-client` | `PM-Maestro-ITI-GP-Org/motor_ai_client` |
+| `motor-data-producer` | `Mintharah/SPI-Stm32-QNX` (branch `spi_qnx_build`) |
+| `shm-chunker` | the hypervisor monorepo, via `QNX_PROJECT_SRC` — no standalone repo yet |
+| `qt6-qnx`, `qt-cluster` | the monorepo (`src/QT/qt6-qnx-libs`, `src/qt_cluster`), via `QNX_PROJECT_SRC` — qt6-qnx stays there by design (the working tree is the 33 GB build cache) |
+| `qnx-screen-virtio` | prebuilt `.apk` from repo.oss.qnx.com (`qnx-apk`) |
 
 ## Not done yet
 
-1. **`motor-ai-client` cannot build.** It sources
-   `${SOMEIP_DIR}/commonapi-qnx/scripts/env.sh` for the generated CommonAPI
-   bindings, the vsomeip libraries and the code generators. `someip` is ~1.5 GB,
-   still lives in the monorepo, and has no repository, so there is nothing to
-   `DEPENDS` on. The recipe exists, records the URL, and skips with an
-   explanation rather than failing a guest build.
-2. **The Qt cluster.** `qt_cluster` is the application (small, CMake, has its own
-   repo); `src/QT` is a 34 GB prebuilt Qt6-for-QNX tree that wants staging rather
-   than compiling — and belongs on a data partition, not in a RAM-resident IFS.
-3. **No data partition for guests.** The real guest-1 carries a `rootfs.img`
-   holding the Qt deploy tree and the someip libraries, for exactly that reason.
-4. **No `.qvmconf`.** The host cannot launch this guest yet; nothing generates
-   the vdev configuration qvm reads.
-5. **`fb_host` ends up in the guest.** `frame-router` builds and stages all three
-   binaries, and the automatic entry pass installs whatever a recipe staged. It
-   is ~24 KB of dead weight in a guest; splitting the recipe or adding per-image
-   file selection would fix it.
+1. **Nothing has booted.** All verification is `dumpifs`/`fdisk`-level; the guest has not
+   been launched under a running host built from these layers. The rootfs, its mount
+   script and its placement on the data partition are all built and verified statically —
+   the union mount actually happening is the untested step.
+2. **Only `qt-cluster` is on the rootfs so far.** `qnx-screen-virtio` (~279 MB) and the
+   SOME/IP libraries still ride in the IFS or stage unused; moving them onto the disk is
+   one line each in `qnx-guest-rootfs`'s `QNX_ROOTFS_INSTALL` plus a template mapping.
+3. **`fb_host` ends up in the guest.** `frame-router` builds and stages all three
+   binaries, and the automatic entry pass installs whatever a recipe staged. It is ~24 KB
+   of dead weight in a guest; splitting the recipe or adding per-image file selection
+   would fix it.
+4. **guest-2 and the Linux guest** from the original project have no recipes yet.
