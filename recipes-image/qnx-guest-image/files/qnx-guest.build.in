@@ -115,6 +115,4 @@ fi
 ## The rest of the block stack, the network stack, and the base filesystem
 ## layout and utilities -- all identical to the host image, so all shared.
 ################################################################################
-#include qnx-block.build.inc
-#include qnx-net.build.inc
 #include qnx-base.build.inc

@@ -31,7 +31,10 @@ QNX_IFS_TEMPLATE = "${S}/qnx-guest.build.in"
 # that becomes the right answer once Qt is in the picture -- an IFS is
 # RAM-resident, and the Qt deploy tree is far too large for one. Moving it is
 # then one line: the same group name, in QNX_ROOTFS_INSTALL instead.
-QNX_IFS_INSTALL = "spi-loopback packagegroup-qnx-hyp-common \
+# The guest needs the same base runtime and stacks as the host; what differs is
+# the driver, which the template still names (devs-vtnet_mmio, devb-virtio).
+QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock \
+                   spi-loopback packagegroup-qnx-hyp-common \
                    motor-ai-client motor-ai-server \
                    packagegroup-qnx-someip"
 

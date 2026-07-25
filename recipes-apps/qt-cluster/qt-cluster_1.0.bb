@@ -20,11 +20,20 @@ EXTERNALSRC_BUILD = "${WORKDIR}/build"
 # the QNX platform plugin (libqqnx.so); qtdeclarative brings Qml/Quick, which is
 # what `find_package(Qt6 COMPONENTS Core Gui Quick)` in the app asks for.
 #
-# qtbase-native is the host-tools half -- moc, rcc, qmlcachegen must run on the
-# build host. meta-qt6's own qt6-cmake.bbclass takes exactly this dependency and
-# points QT_HOST_PATH at it; this recipe inherits qnx-cmake instead (it needs the
-# QNX toolchain file), so it does the same wiring by hand.
-DEPENDS = "qtbase qtdeclarative qtbase-native"
+# The -native halves are the host tools, which must run on the build host.
+# meta-qt6's own qt6-cmake.bbclass takes the qtbase-native dependency and points
+# QT_HOST_PATH at it; this recipe inherits qnx-cmake instead (it needs the QNX
+# toolchain file), so it does the same wiring by hand.
+#
+# qtdeclarative-native is needed on top of that, and the reason is not obvious:
+# qtbase-native supplies Qt6CoreTools and Qt6GuiTools (moc, rcc, uic), but
+# Qt6QmlDependencies.cmake requires Qt6QmlTools and Qt6QuickDependencies.cmake
+# requires Qt6QuickTools -- qmlimportscanner, qmlcachegen, qmltyperegistrar --
+# and those ship only with qtdeclarative-native. Without it the *target*
+# find_package(Qt6 COMPONENTS Quick) is what fails, reporting that Qt6Quick's
+# config file exists but the component was not found, which points nowhere near
+# the host side.
+DEPENDS = "qtbase qtdeclarative qtbase-native qtdeclarative-native"
 
 # Where meta-qt6 stages Qt. Deliberately spelled out rather than derived: the
 # app's CMakeLists computes its deploy paths as ${Qt6_DIR}/../../.. plus
