@@ -43,17 +43,17 @@ and three pieces wire it into a running guest, mirroring
    that starts `devb-virtio` against that vdev and `mount -t qnx6 /dev/vblk0 /` early, so
    `/qt-cluster/run.sh` resolves. A guest booted without the disk logs an error and
    continues.
-3. **The `qnx-host-disk` bbappend** places `rootfs.img` next to the guest IFS and
+3. **The `qnx-host-data` bbappend** places `rootfs.img` next to the guest IFS and
    `.qvmconf` at `/guests/guest-1/` on the host data partition, and switches that partition
    to `auto` sizing so it grows to hold the ~366 MB image.
 
 Add the graphics stack (`qnx-screen-virtio`) or the SOME/IP libraries to the disk by adding
 them to `QNX_ROOTFS_INSTALL` in `qnx-guest-rootfs`, and routing them in its template.
 
-This layer also **bbappends `qnx-host-disk`** (from meta-qnx-hyp) to place all of the guest
+This layer also **bbappends `qnx-host-data`** (from meta-qnx-hyp) to place all of the guest
 artifacts on the host's QNX6 data partition — the same paths the hypervisor project uses.
 The append keeps the layer dependency pointing one way: a build without this layer just
-produces a disk with no guests.
+produces a data partition with no guests.
 
 ## Why this layer is so small
 

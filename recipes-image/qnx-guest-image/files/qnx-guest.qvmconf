@@ -70,7 +70,7 @@ vdev virtio-entropy
 #
 # hostdev is relative: qvm is launched from this file's directory, and the host
 # disk build places rootfs.img right next to this .qvmconf (see the
-# qnx-host-disk bbappend in meta-qnx-guest). loc/intr MUST match the smem= and
+# qnx-host-data bbappend in meta-qnx-guest). loc/intr MUST match the smem= and
 # irq= arguments .rootfs-mount.sh passes to devb-virtio.
 ################################################################################
 vdev virtio-blk
