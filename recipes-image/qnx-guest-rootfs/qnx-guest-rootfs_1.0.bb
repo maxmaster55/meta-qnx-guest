@@ -30,13 +30,3 @@ QNX_ROOTFS_MIN = "192M"
 
 do_configure[noexec] = "1"
 
-python () {
-    # qt-cluster (and the Qt tree it deploys) build from the monorepo working
-    # tree, so without it there is nothing to put on the disk. Skip cleanly --
-    # the same guard qnx-host-image and qnx-host-disk use -- rather than fail a
-    # guest build that never asked for Qt.
-    if not d.getVar('QNX_PROJECT_SRC'):
-        raise bb.parse.SkipRecipe(
-            "QNX_PROJECT_SRC is not set; the Qt payloads that fill the guest "
-            "rootfs build from the monorepo working tree.")
-}
