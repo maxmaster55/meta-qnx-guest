@@ -8,10 +8,20 @@ LICENSE = "CLOSED"
 
 inherit qnx-cmake qnx-src
 
-# NO STANDALONE REPOSITORY YET (same situation as frame-router): lives in the
-# hypervisor monorepo, built from the working tree, no sstate.
-QNX_SRC_LOCAL = "${QNX_PROJECT_SRC}"
-QNX_SRC_SUBDIR = "src/qt_cluster"
+# Its own repository, split out of the hypervisor monorepo. Fetched rather than
+# built in place, so this recipe has a revision to hash and therefore sstate --
+# the working-tree build it replaced had neither and rebuilt every time.
+#
+# The repository root is the application: what used to be src/qt_cluster inside the
+# monorepo. If the split kept that nesting instead, add it back with
+# QNX_SRC_SUBDIR = "src/qt_cluster".
+#
+# QNX_SRC_REV defaults to ${AUTOREV}, which needs the network at *parse* time --
+# every bitbake invocation, not just a fetch. Pin it for reproducible and offline
+# builds:
+#
+#     QNX_SRC_REV = "<commit sha>"
+QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/qt-cluster.git;protocol=ssh;branch=main"
 
 # cmake builds out of tree, so nothing is written into the checkout.
 EXTERNALSRC_BUILD = "${WORKDIR}/build"
