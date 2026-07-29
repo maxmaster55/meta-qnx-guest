@@ -5,12 +5,44 @@
 #
 # Every loc/intr below is a contract with the guest's startup script: the
 # addresses are arbitrary but must match on both sides, because a guest with no
-# PCI has no way to discover them. The virtio-console entry in particular must
-# agree with QNX_GUEST_CONSOLE in the image recipe.
+# PCI has no way to discover them.
+#
+# The at-sign placeholders below come from meta-qnx-guest/conf/qnx-guest-vdevs.inc
+# and are expanded when this file is staged. Those are the addresses that more
+# than one file has to agree on, so they are set in one place; edit them there,
+# not here. Everything still written as a literal appears only in this file.
+#
+# (Spelled out in words rather than shown, because a placeholder written
+# literally in a comment is still a placeholder to the expander, and an unset one
+# is fatal.)
+#
+# The full map, because an interrupt used twice is a bug nobody finds by reading
+# one stanza at a time -- this happened once already, when an entropy vdev was
+# given gic:44 while the SPI pass-through below was still asking for it:
+#
+#   gic:37  pl011                 0x1c090000
+#   gic:38  shmem                 0x1c050000
+#   gic:39  virtio-gpu            0x1c0e0000
+#   gic:40  virtio-net host       0x1c0c0000
+#   gic:41  virtio-blk qvmdisk0   0x1c0d0000
+#   gic:42  virtio-console        0x20000000
+#   gic:43  virtio-net guest      0x20040000
+#   gic:44  pass SPI0             mem:0x1f00050000  (host irq 179)
+#   gic:45  virtio-blk rootfs     0x1c0b0000
+#   gic:46  virtio-entropy        0x1c0a0000
+#           wdt-sp805             0x1c0f0000        (no interrupt)
 
 system guest_1
 
-ram 0x80000000,1G
+# The IFS is RAM-resident, but the payloads that used to dominate this figure --
+# the graphics stack and both Qt deploys -- now live on rootfs.img, so most of
+# this is no longer strictly required.
+#
+# It stays at 2G deliberately, which is what the monorepo's guest-1 config says
+# too: the Qt runtime and the virgl graphics buffers still want headroom, and
+# shrinking it is a change worth testing on hardware on its own rather than
+# taking as a side effect of something else.
+ram @QNX_GUEST_RAM@
 cpu
 
 # Relative to this file's directory, which is why the IFS is deployed beside it.
@@ -26,11 +58,12 @@ vdev pl011
         intr gic:37
 
 ################################################################################
-# The guest's main console. Must match QNX_GUEST_CONSOLE ("0x20000000,42").
+# The guest's main console. The same two values reach the guest's devc-virtio
+# command line as QNX_GUEST_CONSOLE.
 ################################################################################
 vdev virtio-console
-        loc 0x20000000
-        intr gic:42
+        loc @QNX_GUEST_CONSOLE_LOC@
+        intr gic:@QNX_GUEST_CONSOLE_INTR@
 
 ################################################################################
 # Networking to the host, over a vdevpeer the host binds with vpctl.
@@ -44,7 +77,32 @@ vdev virtio-net
         peerfeats 0x00000000
 
 ################################################################################
-# Shared memory, used by the frame router to pass framebuffers to the host.
+# Direct link to the Linux guest, bypassing the host's stack.
+#
+# Both ends name each other: this peers at /dev/qvm/guest_2/guest_to_guest and
+# the Linux guest peers back at /dev/qvm/guest_1/guest_to_guest. `peer` is
+# mandatory on a virtio-net vdev -- qvm refuses to start without it:
+#
+#     [qnx-guest.qvmconf:58] The `peer' option is mandatory
+#
+# The path is /dev/qvm/<system>/<vdev name>, so guest_2 here has to match the
+# `system` line in linux.qvmconf (QNX_LINUX_GUEST_NAME in qnx-linux-guest).
+#
+# Neither guest has to start first: qvm resolves the peer lazily, so whichever
+# comes up second completes the link.
+################################################################################
+vdev virtio-net
+        loc 0x20040000
+        intr gic:43
+        peer /dev/qvm/guest_2/guest_to_guest
+        peerfeats 0x00000000
+        name guest_to_guest
+
+################################################################################
+# Shared memory between guest and host. The frame router used to pass
+# framebuffers through it; with that gone it is what /scripts/shmem-start.sh and
+# shmem-guest demonstrate against, and it stays because the region name and size
+# are what any future user of it would have to agree on anyway.
 ################################################################################
 vdev shmem
         loc 0x1c050000
@@ -53,12 +111,39 @@ vdev shmem
         allow fb_shared
 
 ################################################################################
+# The paravirtual GPU. This is what the guest's whole display depends on:
+# drm-virtio attaches to it over the MMIO transport and QNX Screen then runs the
+# Mesa virgl stack on top, so with no virtio-gpu here the guest has no GPU to
+# find, /dev/dri/card0 never appears and the cluster never reaches the panel.
+#
+# loc and intr are read back by /scripts/graphics-virtio-start.sh, which passes
+# them to drm-virtio as  -o virtio.device=<size>@<loc>:<intr>. That script lives
+# in the qnx-host-conf repository and hardcodes them, so changing them here means
+# changing them there too -- see the warning in qnx-guest-vdevs.inc.
+#
+# scanout-display is the host Screen display the guest is composited onto, and
+# scanout-width/height must equal the physical panel, that display's video-mode
+# in graphics-host-rpi5.conf, and the guest's own graphics-virtio-mmio.conf. The
+# vdev scans out 1:1 with no scaling, so a mismatch puts the guest in a corner of
+# the display rather than filling it.
+################################################################################
+vdev virtio-gpu
+        loc @QNX_GUEST_GPU_LOC@
+        intr gic:@QNX_GUEST_GPU_INTR@
+        scanout-display @QNX_GUEST_SCANOUT_DISPLAY@
+        scanout-width @QNX_GUEST_SCANOUT_WIDTH@
+        scanout-height @QNX_GUEST_SCANOUT_HEIGHT@
+
+################################################################################
 # Entropy: without it the guest's random pool starves and anything using
 # /dev/random blocks.
+#
+# Not at 0x1c0e0000/gic:44, which is where this landed when it was first added:
+# that address is the virtio-gpu's and that interrupt is the SPI pass-through's.
 ################################################################################
 vdev virtio-entropy
-        loc 0x1c0e0000
-        intr gic:44
+        loc 0x1c0a0000
+        intr gic:46
 
 ################################################################################
 # Guest data disk (rootfs.img).
@@ -74,7 +159,63 @@ vdev virtio-entropy
 # irq= arguments .rootfs-mount.sh passes to devb-virtio.
 ################################################################################
 vdev virtio-blk
-        loc 0x1c0b0000
-        intr gic:45
+        loc @QNX_GUEST_ROOTFS_LOC@
+        intr gic:@QNX_GUEST_ROOTFS_INTR@
         hostdev rootfs.img
         name virtio-blk_rootfs
+
+################################################################################
+# Scratch block device, backed by the RAM disk the host creates on its own boot
+# line (devb-ram ... disk name=qvmdisk, so /dev/qvmdisk0 on the host side).
+#
+# Nothing mounts it automatically. It is what /scripts/block-start.sh in the
+# guest demonstrates against, and the host creates the disk whether or not a
+# guest claims it -- so without this stanza the host is publishing a device with
+# no consumer, which is the state this file drifted into.
+#
+# The name is only for readability: it is what shows up in `pidin threads`.
+################################################################################
+vdev virtio-blk
+        loc 0x1c0d0000
+        intr gic:41
+        hostdev /dev/qvmdisk0
+        name virtio-blk_qvmdisk0
+
+################################################################################
+# Virtual watchdog. Driven by /scripts/watchdog-start.sh and watchdog-stop.sh in
+# the guest, which have nothing to open without it. No interrupt: the SP805 model
+# resets the guest rather than raising one.
+################################################################################
+vdev wdt-sp805
+        loc 0x1c0f0000
+
+################################################################################
+# Pass-through hardware.
+#
+# These are real RP1 register windows handed to the guest, which is why they are
+# `pass` and not `vdev`: no model sits in between, the guest drives the silicon.
+# The host must therefore not be driving the same blocks -- its own spi-dwc reads
+# a config naming the same SPI0 base, so only one of the two may run at a time.
+#
+# `intr gic:44=179` maps the guest's interrupt 44 onto the host's 179, which is
+# the Pi 5's SPI0 line. That is the mapping the host's spi.conf documents from
+# the other side.
+################################################################################
+
+# SPI0 (RP1 SPI)
+pass
+        loc mem:0x1f00050000,0x1000,rwn
+        intr gic:44=179
+
+# GPIO - io_bank0 (function select/control)
+pass loc mem:0x1f000d0000,0x4000,rwn
+# GPIO - rio0 (output/input data + atomic set/clr/xor)
+pass loc mem:0x1f000e0000,0x4000,rwn
+# GPIO - pads_bank0 (pull/drive/slew config)
+pass loc mem:0x1f000f0000,0x4000,rwn
+
+################################################################################
+# SMMU. Needed for the pass-through windows above to do DMA safely -- without it
+# a passed-through device sees host-physical addresses rather than the guest's.
+################################################################################
+vdev smmu

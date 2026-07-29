@@ -58,6 +58,13 @@
     ############################################################################
 @QNX_IFS_STARTUP@
 
+    ############################################################################
+    ## The demo itself is not started here, matching the reference guest: the
+    ## graphics stack wants the host's Screen to already be up, and whether it is
+    ## depends on how far the host got. One command from the guest shell:
+    ############################################################################
+    display_msg "Run /scripts/start-guest1.sh to bring up the cluster demo"
+
     display_msg "Starting shell ..."
     [+session] ksh &
 }
@@ -68,9 +75,11 @@
 ## Mount the guest data disk (rootfs.img) at /.
 ##
 ## rootfs.img is attached by qnx-guest.qvmconf as a virtio-blk vdev. smem= and
-## irq= here MUST match that vdev's loc/intr (0x1c0b0000 / gic:45). The whole
-## device is the filesystem -- there is no partition table -- so it is mounted
-## as /dev/vblk0 directly, not a /dev/vblk0tNNN partition.
+## irq= here must match that vdev's loc/intr, which is why both come from the
+## same two variables in meta-qnx-guest/conf/qnx-guest-vdevs.inc rather than
+## being written out twice. The whole device is the filesystem -- there is no
+## partition table -- so it is mounted as /dev/vblk0 directly, not a
+## /dev/vblk0tNNN partition.
 ##
 ## An external file would need a repo path; this is short and self-contained, so
 ## it is written inline. It contains no '}' or '${...}', which an inline mkifs
@@ -79,7 +88,7 @@
 [perms=0744] /proc/boot/.rootfs-mount.sh = {
 #!/bin/ksh
 echo "Starting virtio block driver for the data disk ..."
-devb-virtio virtio smem=0x1c0b0000,irq=45 disk name=vblk
+devb-virtio virtio smem=@QNX_GUEST_ROOTFS_LOC@,irq=@QNX_GUEST_ROOTFS_INTR@ disk name=vblk
 
 if waitfor /dev/vblk0 10
 then
@@ -93,6 +102,52 @@ then
 else
     echo "ERROR: /dev/vblk0 never appeared -- is rootfs.img present next to the .qvmconf?"
 fi
+}
+
+################################################################################
+## Bring up the cluster demo, in the order the pieces need each other.
+##
+## This is the reference guest's /scripts/start-guest1.sh. It is one script and
+## not five boot-script lines because every step here can fail for a reason
+## worth reading, and because it is run after the host is known to be ready --
+## the graphics step needs the host's Screen already up, which the guest cannot
+## check for and the host cannot promise at any particular time.
+##
+## Order matters and the sleeps are the reference's:
+##   producer first, since the client reads the shared memory it creates
+##   client next, one second later, so the segment exists before it looks
+##   graphics last, because Qt needs /dev/screen before it can open a window
+##
+## The Qt tree is at /qt-cluster (from rootfs.img), not the monorepo's
+## /QT_Demo_APP -- run.sh resolves its own directory, so the tree relocated
+## cleanly and only this path had to follow it.
+##
+## graphics-virtio-start.sh keeps its output, unlike the reference, which sent
+## it to /dev/null. It is the step that retries, and the one whose failure looks
+## from the outside like nothing more than a screen that stays dark.
+##
+## No '}' and no '${...}' anywhere below: an inline mkifs block cannot carry
+## either, and a stray brace silently ends the block.
+################################################################################
+[perms=0744] /scripts/start-guest1.sh = {
+#!/bin/sh
+
+echo "=== Starting motor_data_producer ==="
+/Motor_Data_Producer/motor_data_producer /Motor_Data_Producer/config.json &
+
+sleep 1
+
+echo "=== Starting motor_ai_client ==="
+export VSOMEIP_CONFIGURATION=/Motor_AI_Client/vsomeip.json
+/Motor_AI_Client/motor_ai_client >/dev/null 2>&1 &
+
+sleep 1
+
+echo "=== Starting graphics ==="
+/scripts/graphics-virtio-start.sh
+
+echo "=== Starting the Qt cluster ==="
+cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
 }
 
 ################################################################################
@@ -110,6 +165,41 @@ fi
 # devs-, not devnp-: QNX 8 io-sock drivers use the devs- prefix; devnp- was
 # the io-pkt naming.
 /lib/dll/devs-vtnet_mmio.so=devs-vtnet_mmio.so
+
+# The Screen display configurations and graphics-virtio-start.sh used to be
+# listed here, pointed into the qnx-host-conf stage directory. They come from
+# the qnx-guest-conf component now: reaching into the host component's staging
+# meant installing the host component, and that carries the board's wifi PSK.
+
+# The rest of what the reference guest carries. A guest sees PCI through qvm's
+# generic FDT host bridge, so it needs the bus module and the NIC drivers a
+# passed-through device might be -- the same io-sock dlopen-by-name rule as on
+# the host.
+/lib/dll/mods-pci.so=mods-pci.so
+/lib/dll/devs-em.so=devs-em.so
+/lib/dll/devs-igc.so=devs-igc.so
+/lib/dll/devs-ix.so=devs-ix.so
+/lib/dll/devs-re.so=devs-re.so
+
+# FAT, for reading a boot partition or a USB stick.
+/lib/dll/fs-dos.so=fs-dos.so
+
+/sbin/devb-ram=devb-ram
+/sbin/devc-pty=devc-pty
+/usr/sbin/sysctl=sysctl
+/sbin/pfctl=pfctl
+[+optional] /usr/sbin/if_up=if_up
+
+# pci-server reads this. No [envars] section naming a hw module: under qvm the
+# generic pci_hw-fdt is the right one and pci-server finds it by itself.
+/etc/system/config/pci/pci_server.cfg = {
+[buscfg]
+
+[runtime]
+BUS_SCAN_LIMIT=1
+
+}
+/etc/system/config/pci/pcidatabase.com-tab_delimited.txt=${QNX_TARGET}/etc/system/config/pci/pcidatabase.com-tab_delimited.txt
 
 ################################################################################
 ## The rest of the block stack, the network stack, and the base filesystem
