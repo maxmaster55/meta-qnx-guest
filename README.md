@@ -79,7 +79,7 @@ is in the right place.
 
 The dependency on `meta-qnx-hyp` is for **applications, not the host image**:
 several are built once and installed into both host and guests (`rpi-gpio`,
-`frame-router`). Duplicating those recipes per image layer would be worse than
+`motor-controller`). Duplicating those recipes per image layer would be worse than
 depending on the layer that holds them. If the application recipes ever outgrow
 that arrangement they should move to a layer of their own, with both image
 layers depending on it.
@@ -102,15 +102,11 @@ Most recipes clone their own repository and track the branch head — see
 
 ## Not done yet
 
-1. **Nothing has booted.** All verification is `dumpifs`/`fdisk`-level; the guest has not
-   been launched under a running host built from these layers. The rootfs, its mount
-   script and its placement on the data partition are all built and verified statically —
-   the union mount actually happening is the untested step.
-2. **Only `qt-cluster` is on the rootfs so far.** `qnx-screen-virtio` (~279 MB) and the
-   SOME/IP libraries still ride in the IFS or stage unused; moving them onto the disk is
-   one line each in `qnx-guest-rootfs`'s `QNX_ROOTFS_INSTALL` plus a template mapping.
-3. **`fb_host` ends up in the guest.** `frame-router` builds and stages all three
-   binaries, and the automatic entry pass installs whatever a recipe staged. It is ~24 KB
-   of dead weight in a guest; splitting the recipe or adding per-image file selection
-   would fix it.
-4. **guest-2 and the Linux guest** from the original project have no recipes yet.
+1. **The cluster demo has not run end to end.** The guest launches under a host built
+   from these layers and its paravirtual GPU initialises; `/scripts/start-guest1.sh` is
+   the one-command path through producer, SOME/IP client, graphics and Qt, and has not
+   been driven all the way through on hardware yet.
+2. **The SOME/IP libraries still ride in the IFS.** `qt-cluster` and `qnx-screen-virtio`
+   are on the rootfs; moving the rest is one line in `qnx-guest-rootfs`'s
+   `QNX_ROOTFS_INSTALL` plus a template mapping.
+3. **guest-2 and the Linux guest** from the original project have no recipes yet.

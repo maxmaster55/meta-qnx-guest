@@ -21,7 +21,17 @@ QNX_ROOTFS_TEMPLATE = "${S}/qnx-guest-rootfs.build.in"
 # add qnx-screen-virtio for the graphics stack, and the SOME/IP libraries, as
 # each is ready -- one word each, and the template already routes the graphics
 # tree if it is present.
-QNX_ROOTFS_INSTALL = "qt-cluster"
+# qnx-screen-virtio carries drm-virtio, the guest's virtio-gpu driver, plus the
+# EGL/GLES stack that goes with it. /scripts/graphics-virtio-start.sh execs
+# drm-virtio by name, so without this the guest reports
+#
+#     drm-virtio: cannot execute - No such file or directory
+#
+# It is ~279MB unpacked -- virtio_dri.so alone is 67MB -- which is why it goes
+# here and not in the IFS: an IFS is copied into guest RAM whole at boot. The
+# guest union-mounts this disk at / early enough that drm-virtio is on PATH by
+# the time the graphics script runs.
+QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio"
 
 # ~126 MB of qt-cluster today; "auto" grows the image if the graphics stack is
 # added later rather than failing with "does not fit".

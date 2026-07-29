@@ -27,4 +27,17 @@
 ## Contributed by QNX_ROOTFS_EXTRA -- the graphics stack and SOME/IP libraries
 ## land here as they come online. Empty unless something sets it.
 ################################################################################
+################################################################################
+## The processor tree of everything in QNX_ROOTFS_INSTALL that stages one --
+## qnx-screen-virtio puts drm-virtio and the virtio EGL/GLES stack under
+## aarch64le/usr. The guest union-mounts this disk at /, so usr/bin here becomes
+## /usr/bin there and drm-virtio is on PATH, which is what
+## /scripts/graphics-virtio-start.sh needs.
+##
+## Mapped whole rather than file by file: the virtio graphics stack is ~279MB
+## across several hundred files, and enumerating it here would be a list nobody
+## could keep correct.
+################################################################################
+/usr=@QNX_ROOTFS_SYSROOT@/@QNX_PROCESSOR@/usr
+
 @QNX_ROOTFS_EXTRA@
