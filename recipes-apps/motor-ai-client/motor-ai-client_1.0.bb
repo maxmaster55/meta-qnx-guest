@@ -62,7 +62,8 @@ do_install() {
 QNX_IFS_EXTRA_ENTRIES = "\
 /Motor_AI_Client/motor_ai_client=@QNX_IFS_ROOT@/motor-ai-client/motor_ai_client\n\
 /Motor_AI_Client/vsomeip.json=@QNX_IFS_ROOT@/motor-ai-client/vsomeip.json\n\
-[+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\
+[+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\n\
+[+dupignore] /etc/commonapi4someip.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\
 "
 
 # Started by hand, as in the project's own guest images.
