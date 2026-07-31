@@ -42,6 +42,35 @@
     ifconfig vtnet0 @QNX_GUEST_IP@ netmask 255.255.255.0 up
     route add default @QNX_GUEST_GATEWAY@
 
+    # The guest_to_guest vdev: a direct wire to the Linux guest, with no host
+    # in between and so no gateway. This is the link motor_ai_client talks to
+    # motor_ai_server over -- both vsomeip configs name these addresses
+    # literally, so this and network-setup.sh in meta-bmo have to agree.
+    ifconfig vtnet1 @QNX_GUEST_PEER_IP@ netmask 255.255.255.0 up
+
+    ############################################################################
+    ## SPI and GPIO, on hardware passed straight through by the .qvmconf.
+    ##
+    ## The RP1's SPI0 and GPIO register windows are mapped into this guest, so
+    ## these are the same drivers the host would run against the same silicon --
+    ## which is also why only one side may drive them at a time.
+    ##
+    ## rpi-gpio cannot identify the board under a hypervisor: it reads the model
+    ## from uname, and gets qvm's answer rather than the Pi's. RPI_GPIO_FORCE_MODEL
+    ## is what the application added for exactly this, and without it the resource
+    ## manager starts, fails to recognise the platform, and /dev/gpio never
+    ## appears.
+    ############################################################################
+    display_msg "Starting SPI master driver ..."
+    gpio-rp1 set 7-8 a0 pu
+    gpio-rp1 set 9-11 a0 pd
+    spi-dwc -c /var/spi.conf
+    waitfor /dev/io-spi
+
+    display_msg "Starting GPIO resource manager ..."
+    RPI_GPIO_FORCE_MODEL=RaspberryPi5 rpi-gpio &
+    waitfor /dev/gpio
+
     ############################################################################
     ## Data disk (rootfs.img) -- union-mounted at /.
     ##
@@ -64,6 +93,8 @@
     ## depends on how far the host got. One command from the guest shell:
     ############################################################################
     display_msg "Run /scripts/start-guest1.sh to bring up the cluster demo"
+    display_msg "Other vdevs have scripts of their own: block-start.sh,"
+    display_msg "shmem-start.sh, watchdog-start.sh and watchdog-stop.sh"
 
     display_msg "Starting shell ..."
     [+session] ksh &
@@ -151,6 +182,153 @@ cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
 }
 
 ################################################################################
+## Board binaries, from the two BSPs this image installs.
+##
+## Named here rather than harvested: a BSP ships far more than any one image
+## should carry, so both BSP recipes set QNX_IFS_AUTO_ENTRIES = "0" and leave
+## the choosing to whoever installs them.
+##
+##   gpio-rp1 / spi-dwc   drive the RP1 windows passed through by the .qvmconf
+##   shmem-guest          the shmem vdev's demo utility
+##   wdtkick              starts and kicks the wdt-sp805 vdev
+##   io                   reads and writes a physical address, which is how
+##                        watchdog-stop.sh disables the timer. NOT in the QNX 8
+##                        SDP -- optional so the image still builds, and
+##                        watchdog-stop.sh checks for it rather than assuming.
+##                        The reference guest has the same gap.
+################################################################################
+/bin/gpio-rp1=gpio-rp1
+/sbin/spi-dwc=spi-dwc
+/bin/wdtkick=wdtkick
+[+optional] /bin/io=io
+
+# shmem-guest has no leading slash, which in mkifs means /proc/boot -- where the
+# reference guest has it. Written this way rather than as /proc/boot/shmem-guest
+# because that is the spelling the reference uses and mkifs's own default.
+shmem-guest=shmem-guest
+
+################################################################################
+## The SPI bus, as this guest sees it.
+##
+## NOT the host's spi.conf, though it describes the same SPI0. The interrupt is
+## the guest's side of the pass-through mapping (the host's is 179), and the
+## clocks and word width differ -- copying the host's file over this one gets a
+## bus that initialises and transfers nothing.
+##
+## dma_thld is a uint8_t, so 255 is the largest value that fits and forces PIO;
+## 65536 wraps to 0 and turns DMA on for every transfer, which is the opposite
+## of what it looks like it says.
+################################################################################
+/var/spi.conf = {
+[globals]
+verbose=5
+
+[bus]
+busno=0
+name=spi0
+base=0x1f00050000
+irq=@QNX_GUEST_SPI_INTR@
+input_clock=500000000
+dma_thld=255
+
+[dev]
+parent_busno=0
+devno=0
+name=dev0
+clock_rate=5000000
+cpha=0
+cpol=0
+bit_order=msb
+word_width=8
+idle_insert=1
+}
+
+################################################################################
+## Scripts for the vdevs that are not brought up at boot.
+##
+## Each one exists because its vdev is offered by the .qvmconf and would
+## otherwise be dead hardware. They are not started automatically for the same
+## reason the reference guest does not start them: each claims a device, and a
+## guest being used for something else should not have them running.
+##
+## The addresses are markers rather than literals precisely because they appear
+## in the .qvmconf too -- see qnx-guest-vdevs.inc.
+##
+## No '}' and no '${...}' in any of these: an inline mkifs block cannot carry
+## either, and a stray brace silently ends the block.
+################################################################################
+[perms=0755] /scripts/shmem-start.sh = {
+#!/bin/sh
+# The loc and intr the shmem vdev was given.
+shmem-guest @QNX_GUEST_SHMEM_LOC@ @QNX_GUEST_SHMEM_INTR@
+}
+
+[perms=0755] /scripts/block-start.sh = {
+#!/bin/sh
+
+echo "Starting virtio block ..."
+# smem and irq must match the scratch virtio-blk vdev, which the host backs with
+# the RAM disk it creates on its own boot line.
+devb-virtio virtio smem=@QNX_GUEST_SCRATCH_LOC@,irq=@QNX_GUEST_SCRATCH_INTR@
+
+waitfor /dev/hd0
+/scripts/ramdisk-init.sh &
+}
+
+[perms=0755] /scripts/ramdisk-init.sh = {
+#!/bin/sh
+
+# First use of a fresh RAM disk: partition and format it. On a later run the
+# partition is already there and this falls straight through to the mount.
+if [ ! -e /dev/hd0t178 ]; then
+    fdisk /dev/hd0 add -t178
+    mount -e /dev/hd0
+    waitfor /dev/hd0t178
+    mkqnx6fs -q /dev/hd0t178
+fi
+
+mount -tqnx6 -o sync=none /dev/hd0t178 /ramdisk
+}
+
+[perms=0755] /scripts/watchdog-start.sh = {
+#!/bin/sh
+
+# Writing 3 to offset 8 enables the watchdog; the value at offset 0 is the
+# timeout. Kick every second, timeout 3 seconds -- in practice 6, since the
+# timer counts down twice and asserts the reset on the second expiry.
+wdtkick -v -a @QNX_GUEST_WDT_LOC@ -t 1000 -E 8:3 -W 0:0x47868C0
+}
+
+[perms=0755] /scripts/watchdog-stop.sh = {
+#!/bin/sh
+
+# The check comes first, and deliberately -- this is the one place this script
+# diverges from the reference guest's copy.
+#
+# Stopping the watchdog is two steps: slay the kicker, then clear the control
+# register. Only the second actually disables the timer, so doing the first
+# alone is worse than doing nothing: the timer keeps counting with nobody
+# feeding it, and the guest resets a few seconds later.
+#
+# `io` is what writes the register, and it is not in the QNX 8 SDP -- the
+# reference guest carries this script and not the binary, so running it there
+# slays the kicker, fails on the next line, and resets the guest. Refusing up
+# front is the honest behaviour.
+if ! command -v io >/dev/null 2>&1; then
+    echo "watchdog-stop: 'io' is not in this image, so the control register at"
+    echo "               @QNX_GUEST_WDT_CTRL@ cannot be cleared."
+    echo "               NOT slaying wdtkick: without the register write the"
+    echo "               timer would keep counting and reset this guest."
+    echo "               Stop the guest from the host instead, or add a utility"
+    echo "               that can write a physical address."
+    exit 1
+fi
+
+slay -f wdtkick
+io 32 @QNX_GUEST_WDT_CTRL@ 0
+}
+
+################################################################################
 ## Applications -- generated from QNX_IFS_INSTALL.
 ################################################################################
 @QNX_IFS_FILES@
@@ -171,6 +349,22 @@ cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
 # the qnx-guest-conf component now: reaching into the host component's staging
 # meant installing the host component, and that carries the board's wifi PSK.
 
+################################################################################
+## Second copies of two Screen modules, in /usr/share/screen.
+##
+## qnx-screen already puts both in /lib/dll, which is where Screen dlopens them
+## from by name. The reference guest carries them in BOTH places, and this
+## reproduces that rather than assuming it was redundant: Screen resolves
+## alloc-config and blit-config through its own search, /usr/share/screen is one
+## of the directories it looks in, and a guest whose graphics-virtio-mmio.conf
+## names alloc-virtio-virgl is not the case that proves /lib/dll is enough.
+##
+## The source has no leading slash and starts at dll/, so mkifs resolves it under
+## a search root's lib/ -- the same spelling the reference uses.
+################################################################################
+/usr/share/screen/screen-stdbuf.so=dll/screen-stdbuf.so
+/usr/share/screen/screen-sw.so=dll/screen-sw.so
+
 # The rest of what the reference guest carries. A guest sees PCI through qvm's
 # generic FDT host bridge, so it needs the bus module and the NIC drivers a
 # passed-through device might be -- the same io-sock dlopen-by-name rule as on
@@ -186,7 +380,8 @@ cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
 
 /sbin/devb-ram=devb-ram
 /sbin/devc-pty=devc-pty
-/usr/sbin/sysctl=sysctl
+# /sbin, which is where both reference images have it.
+/sbin/sysctl=sysctl
 /sbin/pfctl=pfctl
 [+optional] /usr/sbin/if_up=if_up
 

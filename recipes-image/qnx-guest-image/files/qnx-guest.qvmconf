@@ -105,8 +105,8 @@ vdev virtio-net
 # are what any future user of it would have to agree on anyway.
 ################################################################################
 vdev shmem
-        loc 0x1c050000
-        intr gic:38
+        loc @QNX_GUEST_SHMEM_LOC@
+        intr gic:@QNX_GUEST_SHMEM_INTR@
         create fb_shared,0x400000
         allow fb_shared
 
@@ -176,8 +176,8 @@ vdev virtio-blk
 # The name is only for readability: it is what shows up in `pidin threads`.
 ################################################################################
 vdev virtio-blk
-        loc 0x1c0d0000
-        intr gic:41
+        loc @QNX_GUEST_SCRATCH_LOC@
+        intr gic:@QNX_GUEST_SCRATCH_INTR@
         hostdev /dev/qvmdisk0
         name virtio-blk_qvmdisk0
 
@@ -187,7 +187,7 @@ vdev virtio-blk
 # resets the guest rather than raising one.
 ################################################################################
 vdev wdt-sp805
-        loc 0x1c0f0000
+        loc @QNX_GUEST_WDT_LOC@
 
 ################################################################################
 # Pass-through hardware.
@@ -205,7 +205,7 @@ vdev wdt-sp805
 # SPI0 (RP1 SPI)
 pass
         loc mem:0x1f00050000,0x1000,rwn
-        intr gic:44=179
+        intr gic:@QNX_GUEST_SPI_INTR@=179
 
 # GPIO - io_bank0 (function select/control)
 pass loc mem:0x1f000d0000,0x4000,rwn

@@ -31,6 +31,18 @@ QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/shm-chunker.git;proto
 # overriding it would drop its -std and -V flags along with everything else.
 EXTRA_OEMAKE = "CC='${CC}' CXX='${CXX}'"
 
+# The Makefile writes into a build/ directory beside itself. That used to be
+# implicit: building the working tree in place made EXTERNALSRC_BUILD default to
+# <source>/build, so ${B} already pointed there. Fetching leaves B equal to S,
+# and do_install then looked for the binary one directory too high:
+#
+#     install: cannot stat '.../shm-chunker/1.0+git/git/shm_chunker'
+#
+# The same fix motor-controller carries, for the same reason. It holds for both
+# paths: under externalsrc S is the checkout, so ${S}/build is exactly the
+# EXTERNALSRC_BUILD default this used to rely on.
+B = "${S}/build"
+
 # Its check-env target refuses to run without these, which this class exports.
 do_compile() {
 	oe_runmake -C ${S}

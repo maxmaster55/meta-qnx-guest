@@ -19,3 +19,8 @@ do_install() {
 	install -d ${D}${QNX_STAGE_BINDIR}
 	install -m 0755 ${S}/spi_loopback ${D}${QNX_STAGE_BINDIR}/spi_loopback
 }
+
+# /proc/boot, which is where the reference guest has it -- a bare destination is
+# how mkifs spells that, and the reference writes it the same way. Staged into
+# the stage tree's bin/ regardless, since that is what the harvesting pass reads.
+QNX_IFS_DEST[spi_loopback] = "spi_loopback"

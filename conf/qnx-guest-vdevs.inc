@@ -99,6 +99,52 @@ QNX_GUEST_SCANOUT_WIDTH ?= "1024"
 QNX_GUEST_SCANOUT_HEIGHT ?= "600"
 
 # ---------------------------------------------------------------------------
+# Shared memory
+# ---------------------------------------------------------------------------
+# Agreed between: qnx-guest.qvmconf (vdev shmem) and /scripts/shmem-start.sh,
+# which passes both to shmem-guest as positional arguments.
+QNX_GUEST_SHMEM_LOC ?= "0x1c050000"
+QNX_GUEST_SHMEM_INTR ?= "38"
+
+# ---------------------------------------------------------------------------
+# Watchdog
+# ---------------------------------------------------------------------------
+# Agreed between: qnx-guest.qvmconf (vdev wdt-sp805) and the two watchdog
+# scripts, which reach the device by absolute address -- wdtkick -a <loc> to
+# start it, and `io 32 <loc>+8 0` to stop it. No interrupt: the SP805 model
+# resets the guest rather than raising one.
+QNX_GUEST_WDT_LOC ?= "0x1c0f0000"
+
+# The SP805's control register, which watchdog-stop.sh clears to disable the
+# timer. Derived rather than written out: base + 8 as a second literal is a
+# second thing to get wrong, and textual concatenation is worse still --
+# "<loc>8" reads as 0x1c0f00008, one hex digit too long, which io would happily
+# write to an address the watchdog is not at.
+QNX_GUEST_WDT_CTRL ?= "${@'0x%08x' % (int(d.getVar('QNX_GUEST_WDT_LOC'), 16) + 8)}"
+
+# ---------------------------------------------------------------------------
+# Scratch block device
+# ---------------------------------------------------------------------------
+# Agreed between: qnx-guest.qvmconf (vdev virtio-blk, name virtio-blk_qvmdisk0)
+# and /scripts/block-start.sh, which passes them to devb-virtio as smem= and
+# irq=. Backed by the RAM disk the host creates on its own boot line.
+QNX_GUEST_SCRATCH_LOC ?= "0x1c0d0000"
+QNX_GUEST_SCRATCH_INTR ?= "41"
+
+# ---------------------------------------------------------------------------
+# SPI
+# ---------------------------------------------------------------------------
+# The guest's interrupt for the passed-through SPI0. Agreed between
+# qnx-guest.qvmconf (`intr gic:44=179`, which maps this onto the host's 179) and
+# the irq= line in the guest's own /var/spi.conf.
+#
+# Note that the two sides of that mapping are different numbers, and that the
+# guest's spi.conf is NOT the host's: same silicon, different input_clock,
+# clock_rate, word_width and cpha. Copying one over the other gets a bus that
+# initialises and transfers nothing.
+QNX_GUEST_SPI_INTR ?= "44"
+
+# ---------------------------------------------------------------------------
 # Memory
 # ---------------------------------------------------------------------------
 # Guest RAM, as qvm's "base,size". Used only by the .qvmconf today, and here
