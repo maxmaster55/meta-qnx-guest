@@ -102,6 +102,60 @@ QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
 QNX_IFS_PATH = "/proc/boot:/sbin:/bin:/usr/bin:/usr/sbin:/usr/libexec"
 QNX_IFS_LD_LIBRARY_PATH = "/proc/boot:/lib:/usr/lib:/lib/dll:/lib/dll/pci:/proc/boot/lib"
 
+# ---------------------------------------------------------------------------
+# Qt, for every application rather than one launcher
+# ---------------------------------------------------------------------------
+# These four were qt-cluster's run.sh and nowhere else, which meant the next Qt
+# application on this guest would rediscover each of them the same way: by
+# failing. They are properties of the guest -- its window system, its display,
+# its lack of a GPU, where its fonts are -- not of the cluster, so they belong
+# to the image. run.sh still sets them, and still wins, so nothing about the
+# cluster changes.
+#
+#   QT_QPA_PLATFORM             Qt's compiled-in default is the Linux one (xcb),
+#                               so without this a Qt application on QNX dies at
+#                               startup looking for an X11 plugin that is
+#                               neither deployed nor meaningful here:
+#
+#                                 qt.qpa.plugin: Could not find the Qt platform
+#                                 plugin "xcb"
+#
+#                               The QNX plugin is libqqnx.so, and it talks to
+#                               Screen.
+#
+#   QT_QPA_FONTDIR              Where font-dejavu puts its .ttf files, on the
+#                               data disk. This is already Qt's compiled-in
+#                               default (LibrariesPath + "/fonts"), so it is
+#                               belt and braces -- but it is the value the
+#                               failure names, and stating it makes the image
+#                               and the font recipe visibly agree:
+#
+#                                 QFontDatabase: Cannot find font directory
+#                                 /usr/lib/fonts.
+#
+#                               with every glyph drawn as a box afterwards.
+#
+#   QT_QUICK_BACKEND=software   qtbase here is built no-opengl (see meta-qnx's
+#                               qtbase bbappend), so Qt Quick's default RHI path
+#                               has no backend to run on. A board with a working
+#                               GPU stack drops this line.
+#
+#   QQNX_PHYSICAL_SCREEN_SIZE   millimetres. Screen reports 0x0 for a display
+#                               with no EDID, which is the virtio case, and Qt
+#                               then computes a nonsense DPI -- text comes out
+#                               microscopic or enormous rather than absent, so
+#                               it does not look like a configuration problem.
+#
+# Deliberately NOT here: QT_PLUGIN_PATH, QML2_IMPORT_PATH and additions to
+# LD_LIBRARY_PATH. Each application on this guest ships its own Qt, so those are
+# per-application prefixes; a global one would point every self-contained
+# application at one directory and load a platform plugin built against a
+# different Qt.
+QNX_IFS_ENV += "QT_QPA_PLATFORM=qnx"
+QNX_IFS_ENV += "QT_QPA_FONTDIR=/usr/lib/fonts"
+QNX_IFS_ENV += "QT_QUICK_BACKEND=software"
+QNX_IFS_ENV += "QQNX_PHYSICAL_SCREEN_SIZE=150,90"
+
 # The vdev addresses this image and the host's copy of the .qvmconf both have to
 # agree on -- the console, the data disk, the GPU and the scanout size. Required
 # by the qnx-host-data bbappend as well, which is the point: one file, both
