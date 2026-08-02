@@ -31,7 +31,17 @@ QNX_ROOTFS_TEMPLATE = "${S}/qnx-guest-rootfs.build.in"
 # here and not in the IFS: an IFS is copied into guest RAM whole at boot. The
 # guest union-mounts this disk at / early enough that drm-virtio is on PATH by
 # the time the graphics script runs.
-QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio"
+#
+# font-dejavu puts .ttf files at /usr/lib/fonts, which is where Qt looks when
+# nothing tells it otherwise -- so any Qt application on this guest has fonts,
+# not just the one whose launcher deploys its own. Without it every glyph is
+# drawn as a box and Qt says so once, early:
+#
+#     QFontDatabase: Cannot find font directory /usr/lib/fonts.
+#
+# It rides here rather than in the IFS because 5.4MB of font data in an image
+# that is copied into guest RAM whole is 5.4MB of RAM.
+QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu"
 
 # ~126 MB of qt-cluster today; "auto" grows the image if the graphics stack is
 # added later rather than failing with "does not fit".

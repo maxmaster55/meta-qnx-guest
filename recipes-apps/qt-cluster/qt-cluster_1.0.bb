@@ -43,7 +43,7 @@ EXTERNALSRC_BUILD = "${WORKDIR}/build"
 # find_package(Qt6 COMPONENTS Quick) is what fails, reporting that Qt6Quick's
 # config file exists but the component was not found, which points nowhere near
 # the host side.
-DEPENDS = "qtbase qtdeclarative qtbase-native qtdeclarative-native"
+DEPENDS = "qtbase qtdeclarative qtbase-native qtdeclarative-native font-dejavu"
 
 # Where meta-qt6 stages Qt. Deliberately spelled out rather than derived: the
 # app's CMakeLists computes its deploy paths as ${Qt6_DIR}/../../.. plus
@@ -55,6 +55,13 @@ DEPENDS = "qtbase qtdeclarative qtbase-native qtdeclarative-native"
 # and leaves the app unable to start.
 QT6_CMAKE_DIR = "${RECIPE_SYSROOT}${libdir}/cmake/Qt6"
 
+# The fonts the deploy step copies into the tree, from the font-dejavu package
+# above. This used to be the build host's own /usr/share/fonts, which built here
+# and would build differently or not at all anywhere else -- the deployed font
+# was whatever this machine happened to have installed. Nothing about a Yocto
+# build should depend on the host's font collection.
+QT_CLUSTER_FONT_DIR = "${RECIPE_SYSROOT}${QNX_STAGE_USRLIBDIR}/fonts"
+
 OECMAKE_EXTRA_ARGS = "\
     -DQt6_DIR=${QT6_CMAKE_DIR} \
     -DQT6_LIB_DIR=${RECIPE_SYSROOT}${libdir} \
@@ -62,12 +69,12 @@ OECMAKE_EXTRA_ARGS = "\
     -DQT6_PLUGIN_DIR=${RECIPE_SYSROOT}${libdir}/plugins \
     -DQT_HOST_PATH=${RECIPE_SYSROOT_NATIVE}${prefix_native}/ \
     -DQNX_LIB_DIR=${QNX_TARGET}/${QNX_PROCESSOR} \
-    -DFONT_SOURCE_DIR=/usr/share/fonts \
+    -DFONT_SOURCE_DIR=${QT_CLUSTER_FONT_DIR} \
 "
 
 # These embed RECIPE_SYSROOT / RECIPE_SYSROOT_NATIVE, absolute per-recipe paths,
 # for the same reason qnx-sdp excludes its sysroot flags from signatures.
-OECMAKE_EXTRA_ARGS[vardepsexclude] = "QT6_CMAKE_DIR"
+OECMAKE_EXTRA_ARGS[vardepsexclude] = "QT6_CMAKE_DIR QT_CLUSTER_FONT_DIR"
 
 # The POST_BUILD deploy step (deploy_qt.cmake) runs as part of do_compile and
 # leaves ${B}/deploy as a relocatable directory: run.sh sets LD_LIBRARY_PATH,
@@ -85,6 +92,13 @@ do_install() {
 	# the board rather than here.
 	if [ ! -d ${B}/deploy/qml ] || [ -z "$(ls -A ${B}/deploy/qml 2>/dev/null)" ]; then
 		bbfatal "${B}/deploy/qml is empty -- QT6_QML_DIR did not match where meta-qt6 staged the QML modules"
+	fi
+	# deploy_qt.cmake only warns when a font in fonts.txt is missing, and a
+	# warning in a cmake POST_BUILD step is not something anyone reads. The
+	# result on the board is a cluster that starts, draws, and shows a box in
+	# place of every character -- so this is checked here, where it can fail.
+	if [ -z "$(find ${B}/deploy/lib/fonts -name '*.ttf' 2>/dev/null)" ]; then
+		bbfatal "${B}/deploy/lib/fonts has no .ttf -- the names in the app's fonts.txt do not match anything in ${QT_CLUSTER_FONT_DIR}"
 	fi
 	install -d ${D}${QNX_STAGE_DIR}/qt-cluster
 	cp -a ${B}/deploy/. ${D}${QNX_STAGE_DIR}/qt-cluster/
