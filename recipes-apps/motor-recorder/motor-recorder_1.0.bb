@@ -16,18 +16,7 @@ inherit qnx-sdp qnx-src
 #     QNX_SRC_REV = "<commit sha>"
 QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/motor-recorder.git;protocol=ssh;branch=main"
 
-# PLACEHOLDER -- replace with the repository's first commit.
-#
-# It is pinned rather than left at the ${AUTOREV} default for a reason that
-# matters before the repository exists: AUTOREV makes bitbake `git ls-remote`
-# the repository at *parse* time, on every invocation. Against a repository that
-# is not there yet that is a parse error, and a parse error in one recipe halts
-# parsing for the whole tree -- so an unfetchable recipe sitting in a layer would
-# stop `bitbake qnx-host-disk` from building anything at all.
-#
-# With a fixed revision nothing is fetched until this recipe is actually built,
-# and the failure is then this recipe's alone and says exactly what is wrong.
-QNX_SRC_REV = "0000000000000000000000000000000000000000"
+QNX_SRC_REV = "41f047ee4dd965ce780e9d96a5cd0922d49c4581"
 
 # mosquitto is libmosquitto, built by this layer -- there is no MQTT client in
 # the SDP and none in QNX's OSS repository either.
@@ -40,44 +29,26 @@ QNX_SRC_REV = "0000000000000000000000000000000000000000"
 # producer rather than vendored here.
 DEPENDS = "mosquitto motor-data-producer"
 
-# The upstream Makefile cannot be driven, unlike shm-chunker's and
-# motor-controller's, and the reason is worth stating so nobody tries again:
+# The three paths the upstream Makefile leaves to the caller, because none of
+# them is inside its repository. Everything else it needs -- the compiler, the
+# optimisation and warning flags -- it takes from CC and CFLAGS, which this
+# class already sets, so passing those is enough to drive it as-is.
 #
-#     qnx:
-#         @bash -c 'set -e; . "$(QNX800_DIR)/qnxsdp-env.sh"; \
-#             "$$QNX_HOST/usr/bin/qcc" ...'
-#
-# It sources the SDP environment itself, from ../../qnx800 -- a path that only
-# exists inside the monorepo -- and then calls qcc through the $QNX_HOST that
-# sourcing produced. Under Yocto the environment is already set up by
-# qnx-sdp.bbclass, pointing at QNX_SDP_ROOT, and there is nothing at ../../qnx800
-# to source. Overriding CC would not help: the makefile never uses it.
-#
-# So the compile is spelled out here. It is one command, and it is the same one
-# the makefile runs once its two monorepo-relative paths are removed.
-#
-# mqtt_minimal.c is deliberately absent, and that is not an oversight: the
-# upstream makefile builds recorder.c and mqtt_client.c only. mqtt_minimal.c is
-# a second, unused implementation of the same thing -- adding it gives duplicate
-# symbols, not more features.
-#
-# ${CFLAGS} and ${LDFLAGS} rather than the flags written out: qnx-sdp.bbclass
-# appends QNX_SYSROOT_CPPFLAGS and QNX_SYSROOT_LDFLAGS to them, which is what
-# points at the staged mosquitto headers and library. Only the two flags the
-# application actually needs on top -- its C standard and its POSIX level -- are
-# named here.
-do_compile() {
-	cd ${S}
-	${CC} ${CFLAGS} -std=c11 -D_POSIX_C_SOURCE=200809L \
-		-o motor_recorder recorder.c mqtt_client.c \
-		${LDFLAGS} -lmosquitto -lsocket -lm
-}
+# MOTOR_HEADERS and MQTT_INCDIR are the same directory here: motor-data-producer
+# stages motor_wire.h and motor_shm.h into QNX_STAGE_INCLUDEDIR, and mosquitto
+# stages mosquitto.h into the same place. They stay two variables because
+# upstream has no reason to assume that.
+EXTRA_OEMAKE = "\
+    CC='${CC}' \
+    MOTOR_HEADERS='${RECIPE_SYSROOT}${QNX_STAGE_INCLUDEDIR}' \
+    MQTT_INCDIR='${RECIPE_SYSROOT}${QNX_STAGE_INCLUDEDIR}' \
+    MQTT_LIBDIR='${RECIPE_SYSROOT}${QNX_STAGE_LIBDIR}' \
+"
+EXTRA_OEMAKE[vardepsexclude] = "RECIPE_SYSROOT"
 
-# -lcjson is not here, though the upstream makefile passes it. Nothing in this
-# application calls cJSON: the one JSON document it produces is built with
-# snprintf into a char[4096] in recorder.c. The flag is vestigial, and carrying
-# it would mean carrying a whole library into the image to satisfy a link line
-# that has nothing to link.
+do_compile() {
+	oe_runmake -C ${S}
+}
 
 do_install() {
 	install -d ${D}${QNX_STAGE_BINDIR}
