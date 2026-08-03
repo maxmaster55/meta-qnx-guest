@@ -88,11 +88,24 @@
 @QNX_IFS_STARTUP@
 
     ############################################################################
-    ## The demo itself is not started here, matching the reference guest: the
-    ## graphics stack wants the host's Screen to already be up, and whether it is
-    ## depends on how far the host got. One command from the guest shell:
+    ## The demo, started at boot.
+    ##
+    ## The reference guest leaves this to a command typed at the shell, because
+    ## the graphics step needs the host's Screen to already be up and a guest
+    ## cannot check for that or wait on it. Starting it here accepts that race
+    ## rather than avoiding it: graphics-virtio-start.sh retries, so a guest that
+    ## wins the race comes up with the cluster on the panel, and one that loses
+    ## it reports the retries and can be restarted by hand with the same script.
+    ##
+    ## Backgrounded, and this matters -- the script ends in `exec sh run.sh`,
+    ## which never returns. In the foreground it would take the boot script with
+    ## it and the login shell below would never start, leaving a guest with a
+    ## cluster and no console.
     ############################################################################
-    display_msg "Run /scripts/start-guest1.sh to bring up the cluster demo"
+    display_msg "Starting the cluster demo ..."
+    /scripts/start-guest1.sh &
+
+    display_msg "Re-run /scripts/start-guest1.sh if the panel stays dark"
     display_msg "Other vdevs have scripts of their own: block-start.sh,"
     display_msg "shmem-start.sh, watchdog-start.sh and watchdog-stop.sh"
 
@@ -164,7 +177,20 @@ fi
 #!/bin/sh
 
 echo "=== Starting motor_data_producer ==="
-motor_data_producer &
+motor_data_producer /etc/motor/config.json &
+
+sleep 1
+
+echo "=== Starting motor_recorder ==="
+# -d is where the CSVs go. /record is a directory on the data disk, created by
+# qnx-guest-rootfs, because the IFS is read-only and /tmp -- the recorder's own
+# default -- is RAM here, so anything written there is gone at the next reboot.
+#
+# mkdir anyway: the disk is union-mounted at /, and a guest booted without it
+# has no /record at all. Without this the recorder starts, fails on every write
+# and says so once per file.
+mkdir -p /record
+motor_recorder -d /record &
 
 sleep 1
 

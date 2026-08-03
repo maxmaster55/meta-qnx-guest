@@ -16,6 +16,21 @@
 [uid=0 gid=0 perms=0755]
 
 ################################################################################
+## Where motor_recorder writes its CSVs -- start-guest1.sh runs it with
+## -d /record.
+##
+## It has to be on this disk rather than in the IFS for two reasons: an IFS is
+## read-only, and the recorder's own default (/tmp) is RAM here, so a recording
+## would not survive the reboot it was made to outlast.
+##
+## Nothing prunes it. The recorder writes until the filesystem is full, and this
+## disk is sized from its contents (QNX_ROOTFS_SIZE = "auto") with no headroom
+## reserved for what is written at runtime -- so a long session needs an eye
+## kept on it, or a larger QNX_ROOTFS_MIN.
+################################################################################
+[type=dir] /record
+
+################################################################################
 ## Qt Quick cluster -- the whole self-contained deploy tree (appCluster, run.sh,
 ## and the Qt libraries / QML modules / plugins / fonts it actually uses). Its
 ## run.sh resolves its own directory, so the tree relocates cleanly to /qt-cluster.
