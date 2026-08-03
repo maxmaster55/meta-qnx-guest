@@ -63,7 +63,7 @@ QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
                    qnx-net-tools qnx-diag-tools qnx-fs-tools qnx-login \
                    qnx-ssh qnx-usb qnx-screen qnx-gfx-demos qnx-guest-conf \
                    qnx-hyp-guest-bsp qnx-rpi5-bsp \
-                   spi-loopback motor-controller packagegroup-qnx-hyp-common \
+                   spi-loopback packagegroup-qnx-hyp-common \
                    motor-ai-client motor-data-producer \
                    packagegroup-qnx-someip"
 

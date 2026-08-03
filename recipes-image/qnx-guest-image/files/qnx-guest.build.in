@@ -164,7 +164,7 @@ fi
 #!/bin/sh
 
 echo "=== Starting motor_data_producer ==="
-/Motor_Data_Producer/motor_data_producer /Motor_Data_Producer/config.json &
+motor_data_producer &
 
 sleep 1
 

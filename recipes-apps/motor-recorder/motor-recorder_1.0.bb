@@ -16,8 +16,6 @@ inherit qnx-sdp qnx-src
 #     QNX_SRC_REV = "<commit sha>"
 QNX_SRC_REPO = "git://git@github.com/PM-Maestro-ITI-GP-Org/motor-recorder.git;protocol=ssh;branch=main"
 
-QNX_SRC_REV = "41f047ee4dd965ce780e9d96a5cd0922d49c4581"
-
 # mosquitto is libmosquitto, built by this layer -- there is no MQTT client in
 # the SDP and none in QNX's OSS repository either.
 #
