@@ -65,8 +65,20 @@ QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
                    qnx-hyp-guest-bsp qnx-rpi5-bsp \
                    spi-loopback packagegroup-qnx-hyp-common \
                    motor-ai-client motor-data-producer \
+                   motor-recorder mosquitto \
                    packagegroup-qnx-someip"
 
+# motor-recorder is the third consumer of the motor shared-memory ring, after
+# motor-ai-client and shm_chunker: it writes rows to CSV and publishes them over
+# MQTT. mosquitto comes with it for the same reason it comes with hms on the
+# host -- the binary links libmosquitto.so.1, and an image with one and not the
+# other gets a process that dies at startup with ELIBACC.
+#
+# In the IFS rather than on rootfs.img, unlike the Qt tree: libmosquitto is
+# ~100KB, which an IFS carries without complaint, and the guest rootfs template
+# maps only the processor tree's usr/ -- a library staged into lib/ would not
+# land there at all.
+#
 # motor-ai-server is deliberately NOT here. The pair is split across the two
 # guests: the client runs on QNX because that is where the SPI motor data
 # arrives, and the service runs on Linux (guest-2, bmo-image-ai) because that is
