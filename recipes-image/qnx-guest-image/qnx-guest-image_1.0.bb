@@ -197,3 +197,17 @@ do_generate_buildfile[vardeps] += "QNX_GUEST_IP QNX_GUEST_GATEWAY QNX_GUEST_PEER
 
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"
+
+# ---------------------------------------------------------------------------
+# Let hms in
+# ---------------------------------------------------------------------------
+# hms runs on the host and manages this guest over ssh -- starting it, stopping
+# it, reading its state. That is key-based, so its public key has to be
+# authorised here or every one of those connections asks for a password nobody
+# is there to type.
+#
+# The key is a literal in meta-qnx-hyp's conf fragment rather than something
+# fetched from the hms recipe: a public key is not a secret, and stating it
+# means this image authorises hms without depending on hms.
+require conf/hms-ssh-key.inc
+QNX_SSH_AUTHORIZED_KEYS += "${QNX_HMS_PUBKEY}"
