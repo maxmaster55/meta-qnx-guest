@@ -211,3 +211,8 @@ do_compile[noexec] = "1"
 # means this image authorises hms without depending on hms.
 require conf/hms-ssh-key.inc
 QNX_SSH_AUTHORIZED_KEYS += "${QNX_HMS_PUBKEY}"
+
+# The second key the reference authorises on this guest and on no other. See
+# the fragment for what is known about it, which is not much -- it is carried to
+# match, not because anything here needs it.
+QNX_SSH_AUTHORIZED_KEYS += "${QNX_HOST_ROOT_PUBKEY}"
