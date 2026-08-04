@@ -201,7 +201,22 @@ export VSOMEIP_CONFIGURATION=/Motor_AI_Client/vsomeip.json
 sleep 1
 
 echo "=== Starting graphics ==="
-/scripts/graphics-virtio-start.sh
+# In the foreground and its result checked, because the cluster cannot start
+# without it. graphics-virtio-start.sh does the waiting itself -- it blocks on
+# /dev/dri/card0, then relaunches screen up to five times to get past an EGL
+# race with the freshly-attached virtio-gpu -- and returns non-zero when
+# /dev/screen never appears.
+#
+# Ignoring that was the bug: Qt would start anyway, find no Screen, and fail at
+# the point it tried to open a window. The failure then reads as a Qt problem
+# and is not one, and the real message has already scrolled past.
+if ! /scripts/graphics-virtio-start.sh; then
+    echo "ERROR: graphics did not come up -- NOT starting the cluster."
+    echo "       Check the host is running Screen: the GPU vdev gates its EGL"
+    echo "       context on the host's, and qvm exits if a guest asks first."
+    echo "       Then re-run /scripts/start-guest1.sh"
+    exit 1
+fi
 
 echo "=== Starting the Qt cluster ==="
 cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
