@@ -83,6 +83,22 @@
     /proc/boot/.rootfs-mount.sh
 
     ############################################################################
+    ## SSH daemon.
+    ##
+    ## The guest installs qnx-ssh, so sshd and its helpers were already in the
+    ## image -- nothing started them. `ssh root@10.0.0.2` from the host answered
+    ## "Connection refused", which reads as a network fault and is not one; the
+    ## reference guest starts it and this did not.
+    ##
+    ## AFTER the data disk is mounted, deliberately: the host keys live in
+    ## /var/ssh on that disk. Started before it, ssh-server.sh would wait out its
+    ## full QNX_SSH_KEYDIR_WAIT, fall back to keys in RAM, and hand the guest a
+    ## new identity on every boot.
+    ############################################################################
+    display_msg "Starting SSH daemon ..."
+    /proc/boot/.ssh-server.sh &
+
+    ############################################################################
     ## Applications, ordered by QNX_IFS_STARTUP_AFTER dependencies.
     ############################################################################
 @QNX_IFS_STARTUP@

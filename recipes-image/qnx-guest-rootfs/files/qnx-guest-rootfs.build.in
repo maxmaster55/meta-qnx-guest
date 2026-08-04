@@ -31,6 +31,18 @@
 [type=dir] /record
 
 ################################################################################
+## Where sshd keeps its generated host keys -- QNX_SSH_KEYDIR in meta-qnx's
+## qnx-ssh component.
+##
+## The host has had one of these on its data partition for a while; the guest
+## did not, so ssh-server.sh waited out its full 60s timeout on every boot and
+## then fell back to keys in RAM. That cost a minute before sshd was reachable
+## and gave the guest a new identity every boot -- which is also why anything
+## connecting to it had to pass StrictHostKeyChecking=no to work at all.
+################################################################################
+[type=dir] /var/ssh
+
+################################################################################
 ## Qt Quick cluster -- the whole self-contained deploy tree (appCluster, run.sh,
 ## and the Qt libraries / QML modules / plugins / fonts it actually uses). Its
 ## run.sh resolves its own directory, so the tree relocates cleanly to /qt-cluster.

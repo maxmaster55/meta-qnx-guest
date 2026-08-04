@@ -66,18 +66,28 @@ vdev virtio-console
         intr gic:@QNX_GUEST_CONSOLE_INTR@
 
 ################################################################################
-# Networking to the host, over a vdevpeer the host binds with vpctl.
+# THE ORDER OF THE TWO virtio-net VDEVS BELOW IS LOAD-BEARING.
+#
+# The guest enumerates them in REVERSE, so the one declared LAST becomes vtnet0
+# and the one declared first becomes vtnet1. guest_to_host is therefore last,
+# which is also the order the reference guest-1 config uses.
+#
+# Getting it backwards does not fail: the guest boots, both interfaces come up,
+# and the boot script's addresses simply land on the wrong wires --
+#
+#     vtnet0  10.0.0.2   on the guest-to-guest link
+#     vtnet1  10.0.2.1   on the host link
+#
+# -- so the host ARPs 10.0.0.2 into silence and every ssh to the guest times
+# out, with nothing anywhere reporting an error. The MACs are what give it away:
+# guest_to_host's mac appears on whichever interface it really is.
+#
+# The MMIO addresses are NOT the ordering key. They are identical to the
+# reference's in both arrangements, which makes them a convincing red herring.
 ################################################################################
-vdev virtio-net
-        loc 0x1c0c0000
-        intr gic:40
-        mac aa:bb:cc:dd:ee:f0
-        name guest_to_host
-        peer /dev/vdevpeers/vp0
-        peerfeats 0x00000000
 
 ################################################################################
-# Direct link to the Linux guest, bypassing the host's stack.
+# Direct link to the Linux guest, bypassing the host's stack. Becomes vtnet1.
 #
 # Both ends name each other: this peers at /dev/qvm/guest_2/guest_to_guest and
 # the Linux guest peers back at /dev/qvm/guest_1/guest_to_guest. `peer` is
@@ -97,6 +107,18 @@ vdev virtio-net
         peer /dev/qvm/guest_2/guest_to_guest
         peerfeats 0x00000000
         name guest_to_guest
+
+################################################################################
+# Networking to the host, over a vdevpeer the host binds with vpctl. Declared
+# last, so it becomes vtnet0 -- see the note above.
+################################################################################
+vdev virtio-net
+        loc 0x1c0c0000
+        intr gic:40
+        mac aa:bb:cc:dd:ee:f0
+        name guest_to_host
+        peer /dev/vdevpeers/vp0
+        peerfeats 0x00000000
 
 ################################################################################
 # Shared memory between guest and host. The frame router used to pass
