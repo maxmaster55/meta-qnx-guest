@@ -41,7 +41,9 @@ QNX_ROOTFS_TEMPLATE = "${S}/qnx-guest-rootfs.build.in"
 #
 # It rides here rather than in the IFS because 5.4MB of font data in an image
 # that is copied into guest RAM whole is 5.4MB of RAM.
-QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu"
+# ssh-hostkeys supplies this guest's pre-generated ssh host key, so it keeps one
+# identity from first boot and the host can pre-accept it. See the template.
+QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys"
 
 # ~126 MB of qt-cluster today; "auto" grows the image if the graphics stack is
 # added later rather than failing with "does not fit".

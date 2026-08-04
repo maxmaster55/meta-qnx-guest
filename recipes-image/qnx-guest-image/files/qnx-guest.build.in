@@ -95,6 +95,21 @@
     ## full QNX_SSH_KEYDIR_WAIT, fall back to keys in RAM, and hand the guest a
     ## new identity on every boot.
     ############################################################################
+    ############################################################################
+    ## Pseudo-terminals, which sshd needs before it can give anyone a shell.
+    ##
+    ## The binary was already in this image and nothing started it, so an ssh
+    ## login got as far as authenticating and then:
+    ##
+    ##     PTY allocation request failed on channel 0
+    ##
+    ## which leaves a session with no terminal -- commands run, but nothing that
+    ## wants a tty works. Before sshd, so it is there when the first connection
+    ## arrives rather than a second later.
+    ############################################################################
+    display_msg "Starting devc-pty manager ..."
+    devc-pty
+
     display_msg "Starting SSH daemon ..."
     /proc/boot/.ssh-server.sh &
 

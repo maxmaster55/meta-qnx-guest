@@ -43,6 +43,20 @@
 [type=dir] /var/ssh
 
 ################################################################################
+## This guest's ssh host key, generated at build time by ssh-hostkeys.
+##
+## ssh-server.sh only generates a key when it does not find one, so shipping it
+## means the guest keeps this identity from its very first boot -- and the host
+## can have it in known_hosts before the guest has ever run, which is what turns
+## the first connection from a question into a verified one.
+##
+## The private half is 0600 because sshd refuses a key it considers loosely
+## permissioned, and reports that only in its log.
+################################################################################
+[perms=0600] /var/ssh/ssh_host_ed25519_key = @QNX_ROOTFS_SYSROOT@/ssh-hostkeys/guest-1/ssh_host_ed25519_key
+[perms=0644] /var/ssh/ssh_host_ed25519_key.pub = @QNX_ROOTFS_SYSROOT@/ssh-hostkeys/guest-1/ssh_host_ed25519_key.pub
+
+################################################################################
 ## Qt Quick cluster -- the whole self-contained deploy tree (appCluster, run.sh,
 ## and the Qt libraries / QML modules / plugins / fonts it actually uses). Its
 ## run.sh resolves its own directory, so the tree relocates cleanly to /qt-cluster.
