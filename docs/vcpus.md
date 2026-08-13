@@ -102,7 +102,7 @@ In `meta-qnx-guest/conf/qnx-guest-vdevs.inc`:
 
 | | default | |
 | --- | --- | --- |
-| `QNX_GUEST_VCPUS` | `2` | how many `cpu` lines |
+| `QNX_GUEST_VCPUS` | `3` | how many `cpu` lines |
 | `QNX_GUEST_VCPU0_SCHED` | *(empty)* | boot CPU; empty means qvm's own priority |
 | `QNX_GUEST_VCPU_AP_SCHED` | `20r` | every AP after the first |
 | `QNX_GUEST_FDT` | `generate` | `suppress` to turn the FDT off |

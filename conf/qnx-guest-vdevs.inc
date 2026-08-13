@@ -193,7 +193,7 @@ QNX_GUEST_RAM ?= "0x80000000,2G"
 # This is the reference project's fix, and it is the one that works on this
 # board -- see docs/vcpus.md in this layer for the rest of that commit and which
 # parts of it this tree does not need.
-QNX_GUEST_VCPUS ?= "2"
+QNX_GUEST_VCPUS ?= "3"
 QNX_GUEST_VCPU0_SCHED ?= ""
 QNX_GUEST_VCPU_AP_SCHED ?= "20r"
 

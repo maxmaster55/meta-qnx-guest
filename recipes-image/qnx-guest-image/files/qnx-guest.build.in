@@ -366,6 +366,27 @@ shmem-guest=shmem-guest
 ## dma_thld is a uint8_t, so 255 is the largest value that fits and forces PIO;
 ## 65536 wraps to 0 and turns DMA on for every transfer, which is the opposite
 ## of what it looks like it says.
+##
+## clock_rate and idle_insert are set for motor_data_producer, which is the only
+## thing on this bus. It reads a 4828-byte frame from the STM32 every 10 ms
+## (20 kHz / 200 rows), so the link has to carry 3.86 Mbit/s sustained with
+## enough margin left for the read to finish inside the block period.
+##
+## At the previous 5 MHz with idle_insert=1 it did not. idle_insert adds a clock
+## between words, so a byte costs 9 bit-times rather than 8, and the frame took
+## 4828 * 9 / 5e6 = 8.69 ms of a 10 ms budget -- measured 8.55 ms on the board.
+## Every cycle that jittered past 10 ms lost a block: ~12 of every 100, with the
+## STM32 overwriting the frame it could not ship.
+##
+## 8 MHz without idle_insert puts the frame at 4828 * 8 / 8e6 = 4.83 ms, which is
+## the rate motor_wire.h says the firmware was designed around ("the link was
+## raised 4 -> 8 MHz at v4"). Do not raise this without watching the producer's
+## crc= counter: past ~8 MHz the bench jumper wiring is what fails first, and
+## the STM32 side has not been validated higher.
+##
+## Keep in step with spi_clock_hz / spi_idle_insert in the producer's
+## config.json (see motor-data-producer_1.0.bb). On a mismatch the producer
+## tries to rewrite this file and bounce spi-dwc at every startup.
 ################################################################################
 /var/spi.conf = {
 [globals]
@@ -383,12 +404,12 @@ dma_thld=255
 parent_busno=0
 devno=0
 name=dev0
-clock_rate=5000000
+clock_rate=8000000
 cpha=0
 cpol=0
 bit_order=msb
 word_width=8
-idle_insert=1
+idle_insert=0
 }
 
 ################################################################################
