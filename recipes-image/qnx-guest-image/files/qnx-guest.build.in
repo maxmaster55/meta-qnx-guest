@@ -36,17 +36,9 @@
     io-sock -m phy -m fdt -d vtnet_mmio
     waitfor /dev/socket 10
 
-    # The other end of the host's vp0. The host routes and NATs this network,
-    # so it is also the default gateway -- see .vdev_net_start.sh and pf.conf
-    # in the host image.
-    ifconfig vtnet0 @QNX_GUEST_IP@ netmask 255.255.255.0 up
-    route add default @QNX_GUEST_GATEWAY@
-
-    # The guest_to_guest vdev: a direct wire to the Linux guest, with no host
-    # in between and so no gateway. This is the link motor_ai_client talks to
-    # motor_ai_server over -- both vsomeip configs name these addresses
-    # literally, so this and network-setup.sh in meta-bmo have to agree.
-    ifconfig vtnet1 @QNX_GUEST_PEER_IP@ netmask 255.255.255.0 up
+    ## Addressing moved into a script because the startup interpreter cannot
+    ## wait for anything or test whether a step worked -- see .net-start.sh.
+    /proc/boot/.net-start.sh
 
     ############################################################################
     ## SPI and GPIO, on hardware passed straight through by the .qvmconf.
@@ -111,7 +103,25 @@
     devc-pty
 
     display_msg "Starting SSH daemon ..."
-    /proc/boot/.ssh-server.sh &
+    ## on -p, not a bare "&". sshd inherits it, and so does every session it
+    ## forks -- which is the point.
+    ##
+    ## An ssh key exchange is CPU, and it is CPU *in here*, competing with what
+    ## this guest is for: a software-rendered Qt cluster and the motor apps,
+    ## all at the default priority of 10. One of the two vCPUs is not even in
+    ## the running -- motor_data_producer pins itself to CPU 0 and polls SPI:
+    ##
+    ##     [ctrl] pinned to CPU 0
+    ##
+    ## so a handshake queues behind the cluster on whatever is left. From the
+    ## host that shows up as ssh taking a long time to produce a prompt, and to
+    ## hms -- which pays a handshake per Monitor poll -- as the guest half of
+    ## the page timing out while the guest is otherwise perfectly healthy.
+    ##
+    ## Above the workload, below the drivers. Management access to a busy board
+    ## is worth more than a few frames of the cluster, and this is the same call
+    ## made on the host for hms.
+    on -p @QNX_GUEST_SSHD_PRIORITY@ /proc/boot/.ssh-server.sh &
 
     ############################################################################
     ## Applications, ordered by QNX_IFS_STARTUP_AFTER dependencies.
@@ -160,6 +170,72 @@
 ## it is written inline. It contains no '}' or '${...}', which an inline mkifs
 ## block cannot carry.
 ################################################################################
+################################################################################
+## Network addressing.
+##
+## A script rather than four lines in the startup block, because those four
+## lines could not wait and could not tell whether they had worked:
+##
+##     Starting networking ...
+##     ifconfig: interface vtnet0 does not exist
+##     route: writing to routing socket: Network is unreachable
+##
+## io-sock returning, and /dev/socket appearing, do not mean the virtio-net
+## devices have attached. The driver enumerates them afterwards, and each one is
+## a negotiation with a vdev thread in qvm on the other side of the virtual
+## wire -- so how long it takes is a property of how loaded the host is, not of
+## this guest. Configuring the interface immediately is a race, and the startup
+## script lost it silently: ifconfig failed, route failed, nothing retried, and
+## the guest ran the rest of its life with no network. Every later symptom --
+## MQTT unreachable, no SOME/IP, no ssh -- is that one lost race.
+##
+## if_up -p waits for presence, which is exactly the missing step. The host
+## image already learned this for its wifi radio, for the same reason.
+##
+## No closing brace and no dollar-brace anywhere below: this is an inline mkifs
+## block, and either one ends it early.
+################################################################################
+[perms=0744] /proc/boot/.net-start.sh = {
+#!/bin/ksh
+
+HOST_IF=vtnet0
+PEER_IF=vtnet1
+
+# The other end of the host's vp0. The host routes and NATs this network, so it
+# is also the default gateway -- see .vdev_net_start.sh and pf-nat.conf in the
+# host image.
+echo "net: waiting for $HOST_IF ..."
+if ! if_up -p -r 20 $HOST_IF; then
+    echo "net: $HOST_IF never appeared. The virtio-net vdevs come from the"
+    echo "net: qvmconf on the host and are found through the FDT qvm generates,"
+    echo "net: so check that the host declared them and that io-sock loaded"
+    echo "net: devs-vtnet_mmio. Interfaces that did appear:"
+    ifconfig -l
+    echo "net: the stack's own account of it:"
+    slog2info | tail -30
+    exit 1
+fi
+
+ifconfig $HOST_IF @QNX_GUEST_IP@ netmask 255.255.255.0 up
+route add default @QNX_GUEST_GATEWAY@
+
+# The guest_to_guest vdev: a direct wire to the Linux guest, with no host in
+# between and so no gateway. This is the link motor_ai_client talks to
+# motor_ai_server over -- both vsomeip configs name these addresses literally,
+# so this and network-setup.sh in meta-bmo have to agree.
+#
+# Not fatal on its own: a guest that can reach the host but not its sibling is
+# still worth having, and saying so beats a silent half-configured stack.
+if if_up -p -r 10 $PEER_IF; then
+    ifconfig $PEER_IF @QNX_GUEST_PEER_IP@ netmask 255.255.255.0 up
+else
+    echo "net: $PEER_IF never appeared -- SOME/IP to the Linux guest is down"
+fi
+
+echo "net: up"
+ifconfig -l
+}
+
 [perms=0744] /proc/boot/.rootfs-mount.sh = {
 #!/bin/ksh
 echo "Starting virtio block driver for the data disk ..."
@@ -398,6 +474,28 @@ fi
 
 slay -f wdtkick
 io 32 @QNX_GUEST_WDT_CTRL@ 0
+}
+
+################################################################################
+## Name resolution.
+##
+## The host NATs this guest onto the outside world (pf-nat.conf in the host
+## image), so routing works the moment the default route above is set -- and
+## then every name lookup fails anyway, because nothing in this image supplies
+## a resolver. The SDP contributes /etc/hosts, services and protocols and stops
+## there, and there is no dhcpcd here: the address is static.
+##
+## The symptom reads as a routing fault and is not one:
+##
+##     # ping 8.8.8.8            -> replies
+##     # ping www.google.com     -> cannot resolve: Name does not resolve
+##
+## Public resolvers rather than the host, which forwards nothing, or the LAN
+## gateway, which is not reachable when the board's own uplink is the wifi on a
+## different subnet.
+################################################################################
+[perms=0644] /etc/resolv.conf = {
+@QNX_GUEST_RESOLV@
 }
 
 ################################################################################

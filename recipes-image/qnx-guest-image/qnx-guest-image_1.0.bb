@@ -168,6 +168,9 @@ QNX_IFS_ENV += "QT_QPA_FONTDIR=/usr/lib/fonts"
 QNX_IFS_ENV += "QT_QUICK_BACKEND=software"
 QNX_IFS_ENV += "QQNX_PHYSICAL_SCREEN_SIZE=150,90"
 
+# Which machine this shell is on -- see the same setting in qnx-host-image.
+QNX_IFS_PROMPT = "(G1)# "
+
 # The vdev addresses this image and the host's copy of the .qvmconf both have to
 # agree on -- the console, the data disk, the GPU and the scanout size. Required
 # by the qnx-host-data bbappend as well, which is the point: one file, both
@@ -190,10 +193,35 @@ QNX_GUEST_GATEWAY ?= "10.0.0.1"
 # qguest0), and the two have to stay on the same /24.
 QNX_GUEST_PEER_IP ?= "10.0.2.1"
 
+# Name servers, written to this guest's /etc/resolv.conf. Without them the guest
+# routes to the outside world through the host's NAT and resolves nothing, which
+# looks like a routing failure and is not one.
+#
+# Public resolvers by default rather than the LAN gateway: the host's own uplink
+# may be the wifi, on a subnet the LAN gateway's address is not on. Space
+# separated, one `nameserver` line each.
+QNX_GUEST_DNS ?= "8.8.8.8 8.8.4.4"
+
+# What sshd runs at inside this guest, rather than procnto's default 10.
+#
+# The guest's own applications sit at 10: the Qt cluster rendering in software,
+# the motor producer (pinned to CPU 0), the recorder, the AI client. An ssh key
+# exchange is CPU, so at equal priority a handshake waits behind all of them --
+# which is why ssh from the host is slow to give a prompt and why hms, paying a
+# handshake per Monitor poll, sees the guest time out while it is healthy.
+#
+# 15: above the workload, below io-sock at 21, so raising it cannot starve the
+# guest's own networking.
+QNX_GUEST_SSHD_PRIORITY ?= "15"
+
+QNX_GUEST_RESOLV = "${@chr(10).join('nameserver %s' % s for s in (d.getVar('QNX_GUEST_DNS') or '').split())}"
+
 # The template is tracked by its own checksum, but the values substituted into
 # it are not -- so without this, changing an address in local.conf would leave
 # the IFS untouched and the running guest on the old one.
-do_generate_buildfile[vardeps] += "QNX_GUEST_IP QNX_GUEST_GATEWAY QNX_GUEST_PEER_IP"
+do_generate_buildfile[vardeps] += "QNX_GUEST_IP QNX_GUEST_GATEWAY QNX_GUEST_PEER_IP \
+                                   QNX_GUEST_DNS QNX_GUEST_RESOLV \
+                                   QNX_GUEST_SSHD_PRIORITY"
 
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"

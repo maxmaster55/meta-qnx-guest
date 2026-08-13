@@ -155,3 +155,54 @@ QNX_GUEST_SPI_INTR ?= "44"
 # because the Qt runtime and the virgl graphics buffers want headroom and
 # shrinking it is a change worth testing on hardware on its own.
 QNX_GUEST_RAM ?= "0x80000000,2G"
+
+# ---------------------------------------------------------------------------
+# Virtual CPUs
+# ---------------------------------------------------------------------------
+# How many vCPUs the guest gets, and at what host priority each runs.
+#
+# The two priorities are DIFFERENT, and that asymmetry is the whole fix. It is
+# not "give the guest more CPU".
+#
+# startup's start_aps() brings the secondary CPUs up like this:
+#
+#     count = 0;
+#     do {
+#         if(++count == 0) ap_fail(i);
+#     } while(cpu_starting != 0);
+#
+# The boot CPU spins on a plain memory location until the AP it just powered on
+# clears the flag. Nothing in that loop traps, so as a guest vCPU it never exits
+# to the hypervisor -- qvm cannot preempt it, and on a busy four-core host the
+# AP's own thread may not get a core for a very long time. The boot CPU burns a
+# core doing nothing while waiting for a thread it is starving.
+#
+# So the AP is given a priority ABOVE the boot CPU, and it comes up promptly.
+# Raising both, or lowering both, does not help: what matters is that whoever is
+# being waited for outranks whoever is waiting. Getting this backwards is not a
+# small regression -- the guest's virtio device probe is the same shape of
+# handshake, and a starved vCPU fails it, which surfaces as
+#
+#     ifconfig: interface vtnet0 does not exist
+#
+# and a guest with no network for the rest of its life.
+#
+# 20 is below io-sock's 21, so a guest still cannot starve host networking.
+# Round-robin so the AP timeslices rather than holding a core outright.
+#
+# This is the reference project's fix, and it is the one that works on this
+# board -- see docs/vcpus.md in this layer for the rest of that commit and which
+# parts of it this tree does not need.
+QNX_GUEST_VCPUS ?= "2"
+QNX_GUEST_VCPU0_SCHED ?= ""
+QNX_GUEST_VCPU_AP_SCHED ?= "20r"
+
+# One "cpu" line per vCPU: the boot CPU first at whatever qvm itself runs at,
+# then the APs at QNX_GUEST_VCPU_AP_SCHED.
+QNX_GUEST_CPUS = "${@chr(10).join([('cpu sched ' + (d.getVar('QNX_GUEST_VCPU0_SCHED') or '').strip()) if (d.getVar('QNX_GUEST_VCPU0_SCHED') or '').strip() else 'cpu'] + ['cpu sched ' + (d.getVar('QNX_GUEST_VCPU_AP_SCHED') or '').strip()] * (int(d.getVar('QNX_GUEST_VCPUS') or '1') - 1))}"
+
+# startup here is the SDP's stock startup-armv8_fm with no -P<n>, so the guest
+# has to learn its own CPU and GIC topology rather than being told. That is what
+# this is for: without an FDT it probes, and a probe that comes up short leaves
+# a guest running on one CPU while the qvmconf says two.
+QNX_GUEST_FDT ?= "generate"

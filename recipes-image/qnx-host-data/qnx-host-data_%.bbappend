@@ -54,6 +54,8 @@ do_generate_rootfs_buildfile[prefuncs] += "qnx_guest_expand_qvmconf"
 # GPU address would not rebuild the data partition.
 do_generate_rootfs_buildfile[vardeps] += "\
     QNX_GUEST_RAM QNX_GUEST_CONSOLE_LOC QNX_GUEST_CONSOLE_INTR \
+    QNX_GUEST_VCPUS QNX_GUEST_VCPU0_SCHED QNX_GUEST_VCPU_AP_SCHED \
+    QNX_GUEST_CPUS QNX_GUEST_FDT \
     QNX_GUEST_ROOTFS_LOC QNX_GUEST_ROOTFS_INTR \
     QNX_GUEST_GPU_LOC QNX_GUEST_GPU_INTR \
     QNX_GUEST_SCANOUT_DISPLAY QNX_GUEST_SCANOUT_WIDTH QNX_GUEST_SCANOUT_HEIGHT \

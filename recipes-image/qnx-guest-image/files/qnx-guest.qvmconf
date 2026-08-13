@@ -43,7 +43,23 @@ system guest_1
 # shrinking it is a change worth testing on hardware on its own rather than
 # taking as a side effect of something else.
 ram @QNX_GUEST_RAM@
-cpu
+
+################################################################################
+# Virtual CPUs.
+#
+# One "cpu" line per vCPU. The boot CPU runs at qvm's own priority; every AP
+# after it runs HIGHER, and that asymmetry is the point -- startup's boot CPU
+# spin-waits on a plain memory flag for each AP it powers on, in a loop that
+# never traps, so an AP that cannot outrank it does not get scheduled and the
+# guest comes up crippled or not at all.
+#
+# Set in meta-qnx-guest/conf/qnx-guest-vdevs.inc, explained at length there and
+# in that layer's docs/vcpus.md. Do not "simplify" the two priorities into one.
+@QNX_GUEST_CPUS@
+
+# The guest boots the stock startup with no -P<n>, so it reads its CPU and GIC
+# topology out of this FDT instead of probing for it.
+fdt @QNX_GUEST_FDT@
 
 # Relative to this file's directory, which is why the IFS is deployed beside it.
 load qnx-guest.ifs
