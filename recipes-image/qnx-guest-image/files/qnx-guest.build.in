@@ -366,6 +366,31 @@ shmem-guest=shmem-guest
 ## dma_thld is a uint8_t, so 255 is the largest value that fits and forces PIO;
 ## 65536 wraps to 0 and turns DMA on for every transfer, which is the opposite
 ## of what it looks like it says.
+##
+## clock_rate is 21 MHz because it was measured, one variable at a time, with
+## the producer reading real frames. It is only the boot default -- the producer
+## re-applies spi_clock_hz from config.json over it via DCMD_SPI_SET_CONFIG --
+## so the two are kept in step (see motor-data-producer_1.0.bb).
+##
+##   clock   actual    ok/s  bad/s  crc/s   transfer
+##    4 MHz   4.00       12     25      0    25.5 ms
+##    8 MHz   7.94       36     33      0    13.2 ms
+##   15 MHz  14.71       74     27      0     8.2 ms
+##   18 MHz  17.86       95      5      0     7.6 ms
+##   21 MHz  20.83       98      3      0     7.2 ms
+##
+## The STM32 emits a block every 10 ms (20 kHz / 200 rows). Transfer time runs
+## about 2.7x the theoretical wire time on this driver, so below ~15 MHz a
+## transfer no longer fits inside the block period and the link collapses --
+## slowing the bus down to "be safe" is exactly wrong here.
+##
+## Not faster than 21 MHz: SPI2 is on APB1 at 42 MHz and the F401 specifies
+## slave mode to fPCLK/2 = 21 MHz. 25 and 29 MHz measured fine (crc stayed 0)
+## and gained nothing -- transfer time floors at ~7.1 ms on driver overhead --
+## so there is no reason to run out of spec.
+##
+## idle_insert stays 1. It is what the working configuration used; it was never
+## evaluated on its own, and this change is deliberately the clock alone.
 ################################################################################
 /var/spi.conf = {
 [globals]
@@ -383,7 +408,7 @@ dma_thld=255
 parent_busno=0
 devno=0
 name=dev0
-clock_rate=5000000
+clock_rate=21000000
 cpha=0
 cpol=0
 bit_order=msb
