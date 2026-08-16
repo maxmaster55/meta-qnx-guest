@@ -45,8 +45,19 @@
     ## on the card, so none of this space is in the image -- see
     ## .record-mount.sh, and QNX_GUEST_RECORD_* in conf/qnx-guest-vdevs.inc.
     ############################################################################
-    display_msg "Mounting the recording volume ..."
-    /proc/boot/.record-mount.sh
+    ## BACKGROUNDED, and that is not a style choice.
+    ##
+    ## The first boot after the volume is created formats 8 GiB with
+    ## mkqnx6fs -x, and run in the foreground that blocks every line below it:
+    ## the SPI driver, the data disk, devc-pty, sshd, the cluster and the login
+    ## shell. The guest comes up with a network and nothing else, which reads
+    ## as a hang and cost an evening to find.
+    ##
+    ## Nothing later depends on /record existing -- motor_recorder is started
+    ## from start-guest1.sh well after this, and it reports its own failure if
+    ## the directory is not there yet.
+    display_msg "Mounting the recording volume (in the background) ..."
+    /proc/boot/.record-mount.sh &
 
     ############################################################################
     ## SPI and GPIO, on hardware passed straight through by the .qvmconf.
