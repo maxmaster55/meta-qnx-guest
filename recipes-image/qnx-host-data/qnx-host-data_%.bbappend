@@ -78,6 +78,31 @@ QNX_ROOTFS_EXTRA += "\
 # Both guest artifacts must be deployed before this rootfs can read them.
 do_generate_rootfs_buildfile[depends] += "qnx-guest-image:do_deploy qnx-guest-rootfs:do_deploy"
 
+# ORDERING IS NOT ENOUGH. The line above makes the guest images exist before
+# this partition is built; it does not make this partition rebuild when their
+# CONTENTS change.
+#
+# The build file names them by absolute path into DEPLOY_DIR_IMAGE, and a path
+# is not an input as far as bitbake's hashing is concerned -- so a rebuilt
+# guest IFS left do_compile's signature untouched, the cached data partition
+# was reused, and the disk shipped whatever IFS happened to be there the first
+# time it was built.
+#
+# That is not a subtle failure. It put a stale, non-booting guest IFS on the
+# card and kept it there across reflashes: the good image was sitting in the
+# deploy directory the whole time, and the copy inside the disk was one from
+# hours earlier. Flashing again could never fix it, because the bad file was
+# baked into the image being flashed.
+#
+# file-checksums makes the contents an input, so touching either image forces
+# this partition -- and the disk above it -- to be rebuilt.
+do_generate_rootfs_buildfile[file-checksums] += "\
+    ${DEPLOY_DIR_IMAGE}/qnx-guest.ifs:True \
+    ${DEPLOY_DIR_IMAGE}/rootfs.img:True"
+do_compile[file-checksums] += "\
+    ${DEPLOY_DIR_IMAGE}/qnx-guest.ifs:True \
+    ${DEPLOY_DIR_IMAGE}/rootfs.img:True"
+
 # The base recipe sets a fixed 512M -- adding the ~366 MB rootfs.img makes a
 # fixed size a maintenance burden, so size it from what actually goes on it.
 QNX_ROOTFS_SIZE = "auto"
