@@ -106,6 +106,16 @@ In `meta-qnx-guest/conf/qnx-guest-vdevs.inc`:
 | `QNX_GUEST_VCPU0_SCHED` | *(empty)* | boot CPU; empty means qvm's own priority |
 | `QNX_GUEST_VCPU_AP_SCHED` | `20r` | every AP after the first |
 | `QNX_GUEST_FDT` | `generate` | `suppress` to turn the FDT off |
+| `QNX_GUEST_SSHD_PRIORITY` | `15` | what sshd runs at *inside* the guest |
+
+That last one is a different namespace from the rest of this table: the others
+are host priorities for the vCPU threads, this one is a priority inside the
+guest. It is here because it answers the same question from the other side —
+an ssh key exchange is CPU in the guest, and at the default 10 a handshake
+queues behind the Qt cluster and the motor apps. 15 puts it above them and
+below `spi-dwc` at 30, which must not be preempted by a login. See
+[Priorities](../../meta-qnx-hyp/docs/applications.md#priorities) for the whole
+ordering.
 
 Set `QNX_GUEST_VCPUS = "1"` to go back to a uniprocessor guest — the AP priority
 then has nothing to apply to, and none of this matters.

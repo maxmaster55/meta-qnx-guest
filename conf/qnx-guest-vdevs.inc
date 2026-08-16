@@ -154,7 +154,7 @@ QNX_GUEST_SPI_INTR ?= "44"
 # 2G is not a measured requirement; it is the reference project's figure, kept
 # because the Qt runtime and the virgl graphics buffers want headroom and
 # shrinking it is a change worth testing on hardware on its own.
-QNX_GUEST_RAM ?= "0x80000000,2G"
+QNX_GUEST_RAM ?= "0x80000000,4G"
 
 # ---------------------------------------------------------------------------
 # Virtual CPUs

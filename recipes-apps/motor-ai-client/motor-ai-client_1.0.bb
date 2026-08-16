@@ -50,6 +50,12 @@ do_install() {
 	install -m 0755 ${B}/MotorDataClient ${D}${QNX_MOTOR_AI_DIR}/motor_ai_client
 	install -m 0644 ${S}/client/vsomeip_multicast.json ${D}${QNX_MOTOR_AI_DIR}/vsomeip.json
 	install -m 0644 ${S}/interface/commonapi4someip.ini ${D}${QNX_MOTOR_AI_DIR}/commonapi.ini
+
+	# window_rows, the call timeout and the shm poll interval. The client
+	# looks for it at /etc/motor-ai-client/client.conf with no environment
+	# variable set, which is where the IFS record below puts it, so the
+	# guest boot script needs no change to make it take effect.
+	install -m 0644 ${S}/client/client.conf ${D}${QNX_MOTOR_AI_DIR}/client.conf
 }
 
 # @QNX_IFS_ROOT@ is expanded by the image recipe, since the path depends on
@@ -62,8 +68,19 @@ do_install() {
 QNX_IFS_EXTRA_ENTRIES = "\
 /Motor_AI_Client/motor_ai_client=@QNX_IFS_ROOT@/motor-ai-client/motor_ai_client\n\
 /Motor_AI_Client/vsomeip.json=@QNX_IFS_ROOT@/motor-ai-client/vsomeip.json\n\
+/etc/motor-ai-client/client.conf=@QNX_IFS_ROOT@/motor-ai-client/client.conf\n\
 [+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\n\
 [+dupignore] /etc/commonapi4someip.ini=@QNX_IFS_ROOT@/motor-ai-client/commonapi.ini\
 "
 
-# Started by hand, as in the project's own guest images.
+# Started at boot by /scripts/start-guest1.sh, which qnx-guest-image writes into
+# the IFS -- not by hand, which is what the reference guest and an older version
+# of this comment did. The script runs it under an `until` loop so a failure
+# restarts it, which is the QNX-side equivalent of the Restart=on-failure the
+# Linux half gets from systemd; it matters at boot, because the client gives
+# motor_data_producer 10 seconds to create /motor_ctrl and exits if it never
+# arrives.
+#
+# It reads /etc/motor-ai-client/client.conf, placed by the IFS record above.
+# That is the client's own default path, so nothing in the boot script points
+# at it and changing the window size means editing that file, not the image.

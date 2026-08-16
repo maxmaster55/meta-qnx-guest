@@ -48,6 +48,11 @@ do_install() {
 	install -m 0755 ${B}/MotorDataService ${D}${QNX_MOTOR_AI_DIR}/motor_ai_server
 	install -m 0644 ${S}/server/vsomeip_multicast.json ${D}${QNX_MOTOR_AI_DIR}/vsomeip.json
 	install -m 0644 ${S}/interface/commonapi4someip.ini ${D}${QNX_MOTOR_AI_DIR}/commonapi.ini
+
+	# window_rows, data_dir, ai_pid_file and the three signals. The service
+	# looks for it at /etc/motor-ai-server/server.conf with no environment
+	# variable set, which is where the IFS record below puts it.
+	install -m 0644 ${S}/server/server.conf ${D}${QNX_MOTOR_AI_DIR}/server.conf
 }
 
 # @QNX_IFS_ROOT@ is expanded by the image recipe, since the path depends on
@@ -60,7 +65,30 @@ do_install() {
 QNX_IFS_EXTRA_ENTRIES = "\
 /Motor_AI_Server/motor_ai_server=@QNX_IFS_ROOT@/motor-ai-server/motor_ai_server\n\
 /Motor_AI_Server/vsomeip.json=@QNX_IFS_ROOT@/motor-ai-server/vsomeip.json\n\
+[+dupignore] /etc/motor-ai-server/server.conf=@QNX_IFS_ROOT@/motor-ai-server/server.conf\n\
 [+dupignore] /etc/commonapi.ini=@QNX_IFS_ROOT@/motor-ai-server/commonapi.ini\
 "
 
 # Started by hand, as in the project's own guest images.
+
+# What this no longer gives you on its own.
+#
+# The service used to spawn an inference command per window and could answer a
+# client by itself. It now writes the window to <data_dir>/input_data/data.csv
+# and signals a long-running motor_ai_node for each of the three stages, and
+# this layer does not build that node -- it is packaged by meta-bmo for the
+# Linux guest, where the models are.
+#
+# So installing this recipe to put both halves of the SOME/IP pair in one QNX
+# image still does what it was kept for: it exercises the transport, the
+# generated bindings and the whole client path. It just answers every window
+# with "unknown", after waiting out result_timeout_ms per stage. Set
+#
+#     result_timeout_ms = 100
+#
+# in server.conf when using it that way, so a missing node costs a tenth of a
+# second per window instead of thirty seconds.
+#
+# For the node as well, upstream's ai_node/ builds with a plain
+# `make ai_node` against any C++14 compiler and links nothing, so a QNX build
+# of it is a qcc invocation rather than a port.

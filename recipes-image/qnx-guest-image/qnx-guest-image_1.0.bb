@@ -65,9 +65,22 @@ QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
                    qnx-hyp-guest-bsp qnx-rpi5-bsp \
                    spi-loopback packagegroup-qnx-hyp-common \
                    motor-ai-client motor-data-producer \
-                   motor-recorder mosquitto \
+                   motor-recorder mosquitto fault-tester \
+                   motor-diag-service \
                    packagegroup-qnx-someip"
 
+# motor-diag-service is what the AAOS head unit talks to: it publishes a 1 Hz
+# fault classification and answers capture requests over SOME/IP, reading the
+# producer's ring and the AI pipeline's verdicts. It needs the guest to be on
+# the head unit's wire, which is what QNX_GUEST_LAN_IP above provides.
+#
+# fault-tester is a bench tool, not part of the pipeline: it injects a chosen
+# verdict into /motor_fault_override so the head unit's fault card and severity
+# ring can be exercised without a real defect. It is installed but never
+# started -- it latches a fault until released, and one that appeared at every
+# boot would eventually be mistaken for a real one. Run `fault_tester` from the
+# console or over ssh.
+#
 # motor-recorder is the third consumer of the motor shared-memory ring, after
 # motor-ai-client and shm_chunker: it writes rows to CSV and publishes them over
 # MQTT. mosquitto comes with it for the same reason it comes with hms on the
@@ -182,6 +195,16 @@ require conf/qnx-guest-vdevs.inc
 QNX_GUEST_IP ?= "10.0.0.2"
 QNX_GUEST_GATEWAY ?= "10.0.0.1"
 
+# The guest's address on the LAN the host bridges it onto -- the one the AAOS
+# head unit reaches it at, and the one motor_diag_service offers over SOME/IP.
+# It is an alias alongside QNX_GUEST_IP, not a replacement, so the hypervisor's
+# own ssh path to the guest is unaffected.
+#
+# Must be on the same subnet as the host's bridge0 address and free on that
+# wire. Empty disables it, which is right for a board whose vp0 is still routed
+# rather than bridged.
+QNX_GUEST_LAN_IP ?= "192.168.2.50"
+
 # The direct link to the Linux guest, on the guest_to_guest virtio-net vdev --
 # no host, no routing, the two guests on a wire. Until this was set the vdev
 # existed and the interface came up nameless and unaddressed, so SOME/IP between
@@ -219,7 +242,7 @@ QNX_GUEST_RESOLV = "${@chr(10).join('nameserver %s' % s for s in (d.getVar('QNX_
 # The template is tracked by its own checksum, but the values substituted into
 # it are not -- so without this, changing an address in local.conf would leave
 # the IFS untouched and the running guest on the old one.
-do_generate_buildfile[vardeps] += "QNX_GUEST_IP QNX_GUEST_GATEWAY QNX_GUEST_PEER_IP \
+do_generate_buildfile[vardeps] += "QNX_GUEST_IP QNX_GUEST_GATEWAY QNX_GUEST_PEER_IP QNX_GUEST_LAN_IP \
                                    QNX_GUEST_DNS QNX_GUEST_RESOLV \
                                    QNX_GUEST_SSHD_PRIORITY"
 

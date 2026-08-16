@@ -45,9 +45,20 @@ QNX_ROOTFS_TEMPLATE = "${S}/qnx-guest-rootfs.build.in"
 # identity from first boot and the host can pre-accept it. See the template.
 QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys"
 
-# ~126 MB of qt-cluster today; "auto" grows the image if the graphics stack is
-# added later rather than failing with "does not fit".
-QNX_ROOTFS_SIZE = "auto"
+# Fixed at 8G rather than "auto".
+#
+# "auto" sized the image to its contents -- ~126 MB of qt-cluster, so about
+# 750 MB once formatted -- which is the right answer for a disk that only ever
+# holds what the build put there. This one does not: it is the guest's writable
+# filesystem, where motor_recorder writes CSV recordings and captures
+# accumulate, and a disk sized to its initial contents leaves nowhere for them
+# to go.
+#
+# The cost is on the SD card, not in RAM: rootfs.img is a virtio block device
+# the guest mounts, not something copied into guest memory the way the IFS is.
+# It does have to fit alongside the other guest and the host, so a card with
+# room for both 8G guests is assumed.
+QNX_ROOTFS_SIZE = "8G"
 QNX_ROOTFS_MIN = "192M"
 
 do_configure[noexec] = "1"
