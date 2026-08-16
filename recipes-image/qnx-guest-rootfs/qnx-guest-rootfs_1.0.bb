@@ -76,7 +76,17 @@ QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys"
 # and no error to say so. Override per build in local.conf instead:
 #
 #     QNX_ROOTFS_SIZE:pn-qnx-guest-rootfs = "8G"
-QNX_ROOTFS_SIZE = "2G"
+# 1G. Recordings do not live here any more -- /record is its own virtio-blk
+# device backed by a file the host creates on the card (QNX_GUEST_RECORD_* in
+# conf/qnx-guest-vdevs.inc), so this image only has to hold the OS payloads:
+# the Qt cluster and the applications, about 500 MB formatted.
+#
+# That is the point of the split. Space here is copied into the host data
+# partition by mkqnx6fsimg on every build, at roughly 100s per GB. Space on the
+# recording volume is a sparse file made once on the card. Growing the
+# recording area now costs nothing at build time, which is what it should have
+# cost all along.
+QNX_ROOTFS_SIZE = "1G"
 
 # ---------------------------------------------------------------------------
 # Why this number is the build's clock

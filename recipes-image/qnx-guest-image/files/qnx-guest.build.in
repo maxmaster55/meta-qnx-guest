@@ -41,6 +41,14 @@
     /proc/boot/.net-start.sh
 
     ############################################################################
+    ## /record, on its own virtio-blk device. Backed by a file the host makes
+    ## on the card, so none of this space is in the image -- see
+    ## .record-mount.sh, and QNX_GUEST_RECORD_* in conf/qnx-guest-vdevs.inc.
+    ############################################################################
+    display_msg "Mounting the recording volume ..."
+    /proc/boot/.record-mount.sh
+
+    ############################################################################
     ## SPI and GPIO, on hardware passed straight through by the .qvmconf.
     ##
     ## The RP1's SPI0 and GPIO register windows are mapped into this guest, so
@@ -195,6 +203,69 @@
 ## No closing brace and no dollar-brace anywhere below: this is an inline mkifs
 ## block, and either one ends it early.
 ################################################################################
+################################################################################
+## /record -- the recording volume.
+##
+## A separate virtio-blk device, not a directory inside rootfs.img, and that is
+## the whole point. Space inside rootfs.img is copied into the host's data
+## partition by mkqnx6fsimg on every image build (~100s per GB, most of a
+## rebuild). This device is backed by a sparse file the host creates on the card
+## at boot, so the build never pays for it and the card gives up only what the
+## recordings use.
+##
+## mkqnx6fs -x, the expandable form. Its usage says "(Block devices only)",
+## which is exactly what this is in here and exactly what a build-time image
+## file can never be -- so this is the one place the filesystem can be made
+## growable at all.
+##
+## Formatted only when it is not already a qnx6 filesystem. This runs on every
+## boot and must never be the thing that erases a recording.
+##
+## Not fatal. A guest with no /record still boots, still drives the cluster and
+## still talks SOME/IP; only the recorder has nowhere to write, and it says so.
+##
+## No closing brace and no dollar-brace below: inline mkifs block.
+################################################################################
+[perms=0744] /proc/boot/.record-mount.sh = {
+#!/bin/ksh
+
+DEV=/dev/vrec0
+
+# A second devb-virtio, with its own disk name. Sharing "vblk" with the rootfs
+# driver would have the two instances fighting over /dev/vblk0.
+devb-virtio virtio smem=@QNX_GUEST_RECORD_LOC@,irq=@QNX_GUEST_RECORD_INTR@ disk name=vrec
+
+if ! waitfor $DEV 10
+then
+    echo "record: $DEV never appeared -- the host did not provide a recording"
+    echo "record: volume. Check .record-create.sh on the host and that"
+    echo "record: record.img sits beside the qvmconf."
+    exit 0
+fi
+
+# fdisk -l is the cheap way to ask whether there is a filesystem here; a fresh
+# sparse file reads as zeros and mount would simply fail.
+if ! mount -t qnx6 $DEV /record 2>/dev/null
+then
+    echo "record: $DEV is not formatted yet -- making an expandable qnx6"
+    echo "record: filesystem on it. This happens once, on the first boot"
+    echo "record: after the volume is created."
+    if mkqnx6fs -x -q $DEV
+    then
+        mount -t qnx6 $DEV /record || echo "record: format succeeded but mount failed"
+    else
+        echo "record: mkqnx6fs failed -- /record is unavailable this boot"
+        exit 0
+    fi
+fi
+
+if test -d /record
+then
+    echo "record: mounted at /record"
+    df -h /record 2>/dev/null | tail -1
+fi
+}
+
 [perms=0744] /proc/boot/.net-start.sh = {
 #!/bin/ksh
 

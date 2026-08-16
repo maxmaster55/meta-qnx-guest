@@ -145,6 +145,34 @@ QNX_GUEST_SCRATCH_INTR ?= "41"
 QNX_GUEST_SPI_INTR ?= "44"
 
 # ---------------------------------------------------------------------------
+# The recording volume
+# ---------------------------------------------------------------------------
+# Where motor_recorder writes, as a SEPARATE virtio-blk device rather than a
+# directory inside rootfs.img.
+#
+# The point is that this storage costs nothing at build time. rootfs.img is a
+# file inside the host's data partition, so every gigabyte of it is a gigabyte
+# mkqnx6fsimg copies into that partition on every build -- measured at roughly
+# 100s per GB, and it was 73% of an image rebuild. This volume is created on
+# the CARD at first boot instead, so the build never sees it.
+#
+# It is also the only way to get a filesystem that grows: mkqnx6fs -x makes an
+# expandable one, and its usage says "(Block devices only)", which the
+# file-based mkqnx6fsimg can never satisfy at build time. Inside the guest this
+# is /dev/vrec0 -- a block device -- so -x applies.
+#
+# 0x1c100000 and gic:47 are the next free slots; see the map at the top of
+# qnx-guest.qvmconf and keep it updated, because an interrupt used twice is a
+# bug nobody finds by reading one stanza.
+QNX_GUEST_RECORD_LOC ?= "0x1c100000"
+QNX_GUEST_RECORD_INTR ?= "47"
+
+# The backing file on the host's data partition, and how big it is made. It is
+# created sparse, so the card only gives up what the recordings actually use.
+QNX_GUEST_RECORD_IMG ?= "record.img"
+QNX_GUEST_RECORD_SIZE ?= "8G"
+
+# ---------------------------------------------------------------------------
 # Memory
 # ---------------------------------------------------------------------------
 # Guest RAM, as qvm's "base,size". Used only by the .qvmconf today, and here

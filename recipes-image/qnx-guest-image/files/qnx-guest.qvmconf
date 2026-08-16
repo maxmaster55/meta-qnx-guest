@@ -30,6 +30,7 @@
 #   gic:44  pass SPI0             mem:0x1f00050000  (host irq 179)
 #   gic:45  virtio-blk rootfs     0x1c0b0000
 #   gic:46  virtio-entropy        0x1c0a0000
+#   gic:47  virtio-blk record     0x1c100000
 #           wdt-sp805             0x1c0f0000        (no interrupt)
 
 system guest_1
@@ -213,6 +214,24 @@ vdev virtio-blk
 #
 # The name is only for readability: it is what shows up in `pidin threads`.
 ################################################################################
+################################################################################
+# The recording volume: /record inside the guest.
+#
+# Backed by a file the HOST creates on its data partition at boot, not by
+# anything the build produces -- see .record-create.sh in the host image and
+# QNX_GUEST_RECORD_* in meta-qnx-guest/conf/qnx-guest-vdevs.inc.
+#
+# Separate from rootfs.img on purpose. Space inside rootfs.img is copied into
+# the host data partition by mkqnx6fsimg on every build; space here is
+# allocated once, on the card. It is also a block device in the guest, which is
+# what lets it hold an expandable filesystem.
+################################################################################
+vdev virtio-blk
+        loc @QNX_GUEST_RECORD_LOC@
+        intr gic:@QNX_GUEST_RECORD_INTR@
+        hostdev @QNX_GUEST_RECORD_IMG@
+        name virtio-blk_record
+
 vdev virtio-blk
         loc @QNX_GUEST_SCRATCH_LOC@
         intr gic:@QNX_GUEST_SCRATCH_INTR@
