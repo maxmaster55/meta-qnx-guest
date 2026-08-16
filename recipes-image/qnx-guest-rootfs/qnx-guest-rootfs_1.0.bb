@@ -56,9 +56,58 @@ QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys"
 #
 # The cost is on the SD card, not in RAM: rootfs.img is a virtio block device
 # the guest mounts, not something copied into guest memory the way the IFS is.
-# It does have to fit alongside the other guest and the host, so a card with
-# room for both 8G guests is assumed.
-QNX_ROOTFS_SIZE = "8G"
+# It does have to fit alongside the other guest and the host.
+#
+# 2G, not 8G. The image is sparse -- an 8G filesystem holding ~500MB occupies
+# ~485MB on disk -- so the figure is nearly free in the build now that the disk
+# pipeline preserves holes (see qnx-disk.bbclass). What is NOT free is the
+# flashing: dd writes the nominal size to the card whatever the holes say, and
+# every extra gigabyte here is a gigabyte written on every flash of a
+# development image.
+#
+# Raise it when the recordings actually need the room. If they need it
+# permanently, the better shape is a separate volume created on the card at
+# first boot rather than a bigger image -- mkqnx6fs has -x, "create an
+# expandable filesystem", which works on block devices and so cannot be used by
+# the file-based mkqnx6fsimg at build time.
+# "=", not "?=". qnx-rootfs.bbclass sets QNX_ROOTFS_SIZE ?= "auto" and the
+# inherit runs first, so a weak assignment here loses to it silently -- which
+# it did: the image came out 756M, the auto size, with no room for recordings
+# and no error to say so. Override per build in local.conf instead:
+#
+#     QNX_ROOTFS_SIZE:pn-qnx-guest-rootfs = "8G"
+QNX_ROOTFS_SIZE = "2G"
+
+# ---------------------------------------------------------------------------
+# Why this number is the build's clock
+# ---------------------------------------------------------------------------
+# After the image pipeline stopped copying things it did not need to (see
+# qnx-disk.bbclass), one task is 73% of an image rebuild:
+#
+#     200.9s  qnx-host-data : do_compile      <- mkqnx6fsimg
+#      15.6s  qnx-sdp       : do_check_sdp
+#      10.2s  qnx-host-image: do_mkifs
+#       8.7s  qnx-host-disk : do_compile
+#
+# That task builds the host's data partition, and this rootfs.img is a FILE
+# INSIDE it. mkqnx6fsimg therefore reads the whole thing -- holes included --
+# and writes it into a new filesystem. Roughly 100s per GB, so 2G costs ~200s
+# and 8G would cost ~800s. Nothing else in the build scales with this number
+# any more; this one does, linearly.
+#
+# The fix, if the recording area genuinely needs to be large, is not a bigger
+# number here. It is to stop embedding it:
+#
+#   - give the guest rootfs its own partition on the disk rather than making it
+#     a file inside the host's filesystem, so diskimage concatenates two sparse
+#     images instead of one filesystem copying another in; or
+#   - create the recording volume on the card at first boot, where the cost is
+#     paid once on the device instead of on every build. mkqnx6fs -x makes an
+#     expandable filesystem, block devices only, which is why mkqnx6fsimg
+#     cannot do it at build time.
+#
+# Both are real changes needing hardware testing. Until then, keep this small
+# for development and raise it per build in local.conf.
 QNX_ROOTFS_MIN = "192M"
 
 do_configure[noexec] = "1"
