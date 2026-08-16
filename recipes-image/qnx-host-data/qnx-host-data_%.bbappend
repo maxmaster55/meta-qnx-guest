@@ -56,7 +56,7 @@ do_generate_rootfs_buildfile[vardeps] += "\
     QNX_GUEST_RAM QNX_GUEST_CONSOLE_LOC QNX_GUEST_CONSOLE_INTR \
     QNX_GUEST_VCPUS QNX_GUEST_VCPU0_SCHED QNX_GUEST_VCPU_AP_SCHED \
     QNX_GUEST_RECORD_LOC QNX_GUEST_RECORD_INTR QNX_GUEST_RECORD_IMG \
-    QNX_GUEST_LAN_LOC QNX_GUEST_LAN_INTR \
+    QNX_GUEST_LAN_LOC QNX_GUEST_LAN_INTR QNX_GUEST_LAN_PEER \
     QNX_GUEST_CPUS QNX_GUEST_FDT \
     QNX_GUEST_ROOTFS_LOC QNX_GUEST_ROOTFS_INTR \
     QNX_GUEST_GPU_LOC QNX_GUEST_GPU_INTR \
@@ -81,3 +81,17 @@ do_generate_rootfs_buildfile[depends] += "qnx-guest-image:do_deploy qnx-guest-ro
 # The base recipe sets a fixed 512M -- adding the ~366 MB rootfs.img makes a
 # fixed size a maintenance burden, so size it from what actually goes on it.
 QNX_ROOTFS_SIZE = "auto"
+
+# Room for the guests' recording volumes, which the host creates on the card at
+# first boot and which no estimate of the build inputs can predict.
+#
+# Without it "auto" sized this partition to its contents exactly and
+# .record-create.sh failed on every boot:
+#
+#     dd: truncate: No space left on device
+#
+# 9G for one 8G volume plus slack. It costs nothing in the build -- the image
+# is sparse, so a declared size is not a written size -- and nothing on the
+# card until recordings actually accumulate. Raise it if a second guest is
+# given a recording volume too.
+QNX_ROOTFS_RESERVE = "9G"

@@ -170,6 +170,15 @@ QNX_GUEST_SPI_INTR ?= "44"
 QNX_GUEST_LAN_LOC ?= "0x1c110000"
 QNX_GUEST_LAN_INTR ?= "48"
 
+# The host-side vdevpeer this attaches to. Mandatory -- qvm refuses the config
+# outright without it:
+#
+#     [qnx-guest.qvmconf:132] The `peer' option is mandatory
+#
+# It names the HOST's device, mirroring what guest_to_host does with vp0, while
+# the host's vpctl names the guest's vdev. The two references cross.
+QNX_GUEST_LAN_PEER ?= "/dev/vdevpeers/vp2"
+
 # The guest's address on that segment. The host's bridge is .2 and the gateway
 # .1, so .3 is the next free one; it must be on the same subnet as
 # QNX_HOST_BRIDGE_IP or the head unit cannot reach it.

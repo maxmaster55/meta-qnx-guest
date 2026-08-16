@@ -133,6 +133,8 @@ vdev virtio-net
         intr gic:@QNX_GUEST_LAN_INTR@
         mac 00:aa:bb:cc:dd:03
         name guest_to_lan
+        peer @QNX_GUEST_LAN_PEER@
+        peerfeats 0x00000000
 
 vdev virtio-net
         loc 0x20040000
