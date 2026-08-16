@@ -197,13 +197,9 @@ QNX_GUEST_GATEWAY ?= "10.0.0.1"
 
 # The guest's address on the LAN the host bridges it onto -- the one the AAOS
 # head unit reaches it at, and the one motor_diag_service offers over SOME/IP.
-# It is an alias alongside QNX_GUEST_IP, not a replacement, so the hypervisor's
-# own ssh path to the guest is unaffected.
-#
-# Must be on the same subnet as the host's bridge0 address and free on that
-# wire. Empty disables it, which is right for a board whose vp0 is still routed
-# rather than bridged.
-QNX_GUEST_LAN_IP ?= "192.168.2.50"
+# Set in conf/qnx-guest-vdevs.inc, which this recipe requires above -- so a
+# `?=` here is dead and the value there is the one that applies. There were two
+# of these, saying .50 and .3, and only .3 ever reached an image.
 
 # The direct link to the Linux guest, on the guest_to_guest virtio-net vdev --
 # no host, no routing, the two guests on a wire. Until this was set the vdev

@@ -302,25 +302,21 @@ fi
 ifconfig $HOST_IF @QNX_GUEST_IP@ netmask 255.255.255.0 up
 route add default @QNX_GUEST_GATEWAY@
 
-# A second address on the same interface, on the LAN the host bridges this
-# guest onto. Two subnets on one wire, and both are needed:
+# @QNX_GUEST_LAN_IP@ used to be added here as an alias on $HOST_IF as well.
+# It must not be. The LAN address belongs on $LAN_IF and nowhere else.
 #
-#   @QNX_GUEST_IP@   the host's private link to this guest -- `ssh root@...`
-#                    from the hypervisor, unchanged from before the bridge
-#   @QNX_GUEST_LAN_IP@   the address the AAOS head unit talks to, and the one
-#                    motor_diag_service offers over SOME/IP
+# When vp0 was the only link, aliasing the LAN address onto it was the only way
+# to have one at all. $LAN_IF then arrived as a genuinely bridged wire and the
+# alias stayed, so the address sat on two interfaces at once -- and $HOST_IF is
+# configured first, so the connected route for that /24 was installed pointing
+# at $HOST_IF and stayed there. Everything addressed to the LAN subnet went
+# down the private routed link to the hypervisor instead of onto the bridge.
 #
-# An alias rather than a replacement because losing the first would cut the
-# host's own path to the guest, which is how the board is administered.
-#
-# Empty disables it: a guest on a board whose vp0 is still routed rather than
-# bridged has nothing to reach on the LAN, and adding an address there would
-# just be an unreachable one.
-if test -n "@QNX_GUEST_LAN_IP@"
-then
-    ifconfig $HOST_IF inet @QNX_GUEST_LAN_IP@ netmask 255.255.255.0 alias
-    echo "net: LAN alias @QNX_GUEST_LAN_IP@ on $HOST_IF"
-fi
+# It fails in the way that is hardest to read: the guest answers a ping from
+# the host, `ifconfig` looks right on both interfaces, and tcpdump on $LAN_IF
+# is silent. SOME/IP service discovery is the part that actually matters --
+# it binds the LAN address, the stack hands it the first interface holding it,
+# and the multicast leaves on $HOST_IF where no head unit is listening.
 
 # The guest_to_guest vdev: a direct wire to the Linux guest, with no host in
 # between and so no gateway. This is the link motor_ai_client talks to
