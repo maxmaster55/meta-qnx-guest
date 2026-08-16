@@ -271,6 +271,7 @@ fi
 
 HOST_IF=vtnet0
 PEER_IF=vtnet1
+LAN_IF=vtnet2
 
 # The other end of the host's vp0. The host routes and NATs this network, so it
 # is also the default gateway -- see .vdev_net_start.sh and pf-nat.conf in the
@@ -321,6 +322,26 @@ if if_up -p -r 10 $PEER_IF; then
     ifconfig $PEER_IF @QNX_GUEST_PEER_IP@ netmask 255.255.255.0 up
 else
     echo "net: $PEER_IF never appeared -- SOME/IP to the Linux guest is down"
+fi
+
+# The LAN link: vtnet2, bridged on the host onto the physical NIC, so this
+# guest is L2-adjacent to the head unit. SOME/IP service discovery is multicast
+# and will not cross a routed boundary, which is why this exists alongside the
+# routed vtnet0 rather than instead of it.
+#
+# vtnet2 because the guest enumerates virtio-net vdevs in REVERSE declaration
+# order and guest_to_lan is declared first in the qvmconf. Get that wrong and
+# the addresses land on each other's interfaces, which looks like a routing
+# fault and is not one.
+#
+# Not fatal: without it the guest still reaches the host, the Linux guest and
+# the internet; only SOME/IP to the head unit is missing, and it says so.
+if if_up -p -r 10 $LAN_IF; then
+    ifconfig $LAN_IF @QNX_GUEST_LAN_IP@ netmask @QNX_GUEST_LAN_MASK@ up
+    echo "net: $LAN_IF on the bridged LAN segment (SOME/IP to the head unit)"
+else
+    echo "net: $LAN_IF never appeared -- SOME/IP to the head unit is down."
+    echo "net: the host binds it as vp2 and bridges it; check vpctl vp2 there."
 fi
 
 echo "net: up"

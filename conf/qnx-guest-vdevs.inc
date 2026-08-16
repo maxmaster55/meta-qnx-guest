@@ -145,6 +145,38 @@ QNX_GUEST_SCRATCH_INTR ?= "41"
 QNX_GUEST_SPI_INTR ?= "44"
 
 # ---------------------------------------------------------------------------
+# The LAN link -- SOME/IP to whatever is plugged into the board
+# ---------------------------------------------------------------------------
+# A THIRD virtio-net, bridged onto the physical NIC on the host side, so the
+# guest sits on the same L2 segment as the head unit.
+#
+# It exists because SOME/IP service discovery is multicast (224.244.224.245)
+# and multicast does not cross a routed boundary: over the routed vp0 the head
+# unit never saw an OfferService, and NAT gave it nowhere to send a subscribe
+# back to. Bridging makes the two ARP for each other directly, which is what
+# the protocol assumes.
+#
+# Its own interface rather than bridging vp0, which is what was tried first.
+# Bridging vp0 works for SOME/IP and costs the management path: vp0 is how the
+# host reaches the guest for ssh, hms and the Monitor, and how pf NATs the
+# guest out to the internet. A bridge member with its own address sends traffic
+# out of the wrong interface, so that address had to move to the bridge as an
+# alias, and the routed subnet stopped being routed. Two links, one job each,
+# is cheaper than one link doing both badly.
+#
+# DECLARED FIRST in the qvmconf, and that is load-bearing: the guest enumerates
+# virtio-net vdevs in REVERSE declaration order, so the last declared is
+# vtnet0. This one is first, so it is vtnet2, and guest_to_host stays vtnet0.
+QNX_GUEST_LAN_LOC ?= "0x1c110000"
+QNX_GUEST_LAN_INTR ?= "48"
+
+# The guest's address on that segment. The host's bridge is .2 and the gateway
+# .1, so .3 is the next free one; it must be on the same subnet as
+# QNX_HOST_BRIDGE_IP or the head unit cannot reach it.
+QNX_GUEST_LAN_IP ?= "192.168.2.3"
+QNX_GUEST_LAN_MASK ?= "255.255.255.0"
+
+# ---------------------------------------------------------------------------
 # The recording volume
 # ---------------------------------------------------------------------------
 # Where motor_recorder writes, as a SEPARATE virtio-blk device rather than a

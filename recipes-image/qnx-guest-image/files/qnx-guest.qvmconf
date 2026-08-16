@@ -31,6 +31,7 @@
 #   gic:45  virtio-blk rootfs     0x1c0b0000
 #   gic:46  virtio-entropy        0x1c0a0000
 #   gic:47  virtio-blk record     0x1c100000
+#   gic:48  virtio-net lan        0x1c110000  (bridged; SOME/IP)
 #           wdt-sp805             0x1c0f0000        (no interrupt)
 
 system guest_1
@@ -118,6 +119,21 @@ vdev virtio-console
 # Neither guest has to start first: qvm resolves the peer lazily, so whichever
 # comes up second completes the link.
 ################################################################################
+################################################################################
+# DECLARED FIRST so it becomes vtnet2. See the ordering note below -- the guest
+# enumerates these in reverse, so the last declared is vtnet0.
+#
+# Bridged onto the physical NIC by the host (vp2 in .vdev_net_start.sh), which
+# puts this guest on the same L2 segment as the head unit. SOME/IP service
+# discovery is multicast and will not cross a routed boundary, which is why
+# this exists alongside the routed guest_to_host link rather than instead of it.
+################################################################################
+vdev virtio-net
+        loc @QNX_GUEST_LAN_LOC@
+        intr gic:@QNX_GUEST_LAN_INTR@
+        mac 00:aa:bb:cc:dd:03
+        name guest_to_lan
+
 vdev virtio-net
         loc 0x20040000
         intr gic:43
