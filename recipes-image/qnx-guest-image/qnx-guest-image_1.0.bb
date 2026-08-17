@@ -160,10 +160,21 @@ QNX_IFS_LD_LIBRARY_PATH = "/proc/boot:/lib:/usr/lib:/lib/dll:/lib/dll/pci:/proc/
 #
 #                               with every glyph drawn as a box afterwards.
 #
-#   QT_QUICK_BACKEND=software   qtbase here is built no-opengl (see meta-qnx's
-#                               qtbase bbappend), so Qt Quick's default RHI path
-#                               has no backend to run on. A board with a working
-#                               GPU stack drops this line.
+#   (QT_QUICK_BACKEND)          deliberately NOT set. It used to be "software",
+#                               because qtbase was built no-opengl and Qt
+#                               Quick's default RHI path had no backend to run
+#                               on. qtbase is now built with OpenGL ES 2 (see
+#                               this layer's qtbase bbappend) and the guest has
+#                               a real driver behind it in qnx-screen-virtio,
+#                               so the RHI path works and the default is right.
+#
+#                               Do not put it back to force a fallback. The
+#                               software backend has no shader support, so every
+#                               MultiEffect and layer.enabled item draws NOTHING
+#                               and prints no warning -- and the cluster's
+#                               bezel, ring glow, status bands and telltales are
+#                               all built from them. The failure looks like a
+#                               plainer UI, not like a fault.
 #
 #   QQNX_PHYSICAL_SCREEN_SIZE   millimetres. Screen reports 0x0 for a display
 #                               with no EDID, which is the virtio case, and Qt
@@ -178,7 +189,6 @@ QNX_IFS_LD_LIBRARY_PATH = "/proc/boot:/lib:/usr/lib:/lib/dll:/lib/dll/pci:/proc/
 # different Qt.
 QNX_IFS_ENV += "QT_QPA_PLATFORM=qnx"
 QNX_IFS_ENV += "QT_QPA_FONTDIR=/usr/lib/fonts"
-QNX_IFS_ENV += "QT_QUICK_BACKEND=software"
 QNX_IFS_ENV += "QQNX_PHYSICAL_SCREEN_SIZE=150,90"
 
 # Which machine this shell is on -- see the same setting in qnx-host-image.
