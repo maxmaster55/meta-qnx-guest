@@ -403,7 +403,12 @@ fi
 #!/bin/sh
 
 echo "=== Starting motor_data_producer ==="
-motor_data_producer /etc/motor/config.json &
+# -w: poll /etc/motor/config.json's mtime (~1 Hz) and reload on change, so a
+# config edit takes effect without a restart -- and without the restart that
+# would otherwise orphan every /motor_ctrl consumer's mapping (see
+# motor_diag_service's recheck_motor_shm() for what that costs when it does
+# happen: it now recovers, but a config change is not a reason to pay for it).
+motor_data_producer -w /etc/motor/config.json &
 
 sleep 1
 
