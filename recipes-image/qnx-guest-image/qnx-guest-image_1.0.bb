@@ -279,6 +279,19 @@ QNX_SSH_AUTHORIZED_KEYS += "${QNX_HMS_PUBKEY}"
 # costs this guest nothing.
 QNX_SSH_USE_PAM = "no"
 
+# StrictModes off too, for a second and separate reason. With UsePAM no above,
+# sshd stopped crashing but a key that fingerprint-verified as present in
+# authorized_keys was still refused -- cleanly, no server-side crash, just
+# "Permission denied" -- which is what StrictModes does when it does not like
+# the permissions on a directory in the authenticating user's path. This
+# guest's / and /var are group-writable (`ls -ld /` -> drwxrwxr-x qnxuser
+# qnxuser), because qnxuser -- the account the cluster demo runs as -- needs
+# to write there. That ownership is what the demo needs and is not this
+# recipe's business to tighten, so the check that objects to it is turned off
+# instead. Confirmed on the same guest: with both this and UsePAM no, the
+# same key that had just been cleanly rejected logged in in 0.29s.
+QNX_SSH_STRICT_MODES = "no"
+
 # The second key the reference authorises on this guest and on no other. See
 # the fragment for what is known about it, which is not much -- it is carried to
 # match, not because anything here needs it.
