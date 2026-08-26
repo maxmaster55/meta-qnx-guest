@@ -269,28 +269,24 @@ do_compile[noexec] = "1"
 require conf/hms-ssh-key.inc
 QNX_SSH_AUTHORIZED_KEYS += "${QNX_HMS_PUBKEY}"
 
-# UsePAM off for this guest specifically -- see the long comment on
-# QNX_SSH_USE_PAM in qnx-ssh_1.0.bb for the failure this works around: sshd on
-# this guest closed every connection, no response, the instant a credential
-# (key or password, tried separately) was submitted, which is PAM's
-# account/session phase and not either auth method itself. The host runs the
-# identical PAM stack and has never shown it. hms's only login path here is
-# its key, so losing password auth (UsePAM's other job -- see that comment)
-# costs this guest nothing.
-QNX_SSH_USE_PAM = "no"
-
-# StrictModes off too, for a second and separate reason. With UsePAM no above,
-# sshd stopped crashing but a key that fingerprint-verified as present in
-# authorized_keys was still refused -- cleanly, no server-side crash, just
-# "Permission denied" -- which is what StrictModes does when it does not like
-# the permissions on a directory in the authenticating user's path. This
-# guest's / and /var are group-writable (`ls -ld /` -> drwxrwxr-x qnxuser
-# qnxuser), because qnxuser -- the account the cluster demo runs as -- needs
-# to write there. That ownership is what the demo needs and is not this
-# recipe's business to tighten, so the check that objects to it is turned off
-# instead. Confirmed on the same guest: with both this and UsePAM no, the
-# same key that had just been cleanly rejected logged in in 0.29s.
-QNX_SSH_STRICT_MODES = "no"
+# UsePAM and StrictModes are off for this guest -- see the long comments on
+# QNX_SSH_USE_PAM/QNX_SSH_STRICT_MODES in qnx-ssh_1.0.bb for the failures this
+# works around (sshd closing every connection the instant a credential was
+# submitted, then -- with PAM off -- refusing a verified key outright because
+# / and /var are group-writable, which this guest's cluster demo needs).
+#
+# The actual override lives in
+# recipes-sdp/components/qnx-ssh_1.0.bbappend, NOT here: qnx-ssh is one
+# recipe shared by every image, and its ${QNX_SSH_USE_PAM}/
+# ${QNX_SSH_STRICT_MODES} expansions resolve against ITS OWN datastore, not
+# this image recipe's. A plain assignment here (which this file carried for a
+# while) lands in qnx-guest-image's datastore and never reaches qnx-ssh's --
+# silently: no error, no warning, just a guest that keeps shipping UsePAM
+# yes/StrictModes yes regardless of what this file says. Confirmed against a
+# real build: a board flashed from an image built with only this assignment
+# (no bbappend) still refused every login exactly as before. The .bbappend is
+# the actual fix; this comment is kept here because the reasoning for turning
+# both off is specific to this guest, even though the mechanism is not.
 
 # The second key the reference authorises on this guest and on no other. See
 # the fragment for what is known about it, which is not much -- it is carried to
