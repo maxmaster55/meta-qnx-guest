@@ -43,7 +43,47 @@ QNX_ROOTFS_TEMPLATE = "${S}/qnx-guest-rootfs.build.in"
 # that is copied into guest RAM whole is 5.4MB of RAM.
 # ssh-hostkeys supplies this guest's pre-generated ssh host key, so it keeps one
 # identity from first boot and the host can pre-accept it. See the template.
-QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys"
+# The guest's applications ride here too, not in the IFS -- motor-ai-client,
+# motor-data-producer, motor-recorder, motor-diag-service, fault-tester and
+# spi-loopback. Every one of them was in qnx-guest-image's QNX_IFS_INSTALL,
+# where changing one binary cost a full image rebuild and a reflash of the SD
+# card; on this disk it is an scp into the running guest. See the comment on
+# QNX_IFS_INSTALL over there for the boot-order line that decides which side a
+# component belongs on -- everything here is launched by start-guest1.sh, which
+# runs long after .rootfs-mount.sh has union-mounted this disk at /.
+#
+# Their libraries stay in the IFS: mosquitto for motor_recorder and
+# packagegroup-qnx-someip for motor_ai_client and motor_diag_service. Those are
+# not what anyone iterates on, and a union mount resolves a DT_NEEDED soname the
+# same way whichever filesystem the binary came from.
+# And their configuration, plus qnx-guest-conf -- the three Screen
+# configurations and graphics-virtio-start.sh, which used to be in the IFS. A
+# binary that can be replaced with an scp is not much use if the file deciding
+# how it starts still costs a reflash, and everything here is read by
+# start-guest1.sh, which this image also carries now.
+QNX_ROOTFS_INSTALL = "qt-cluster qnx-screen-virtio font-dejavu ssh-hostkeys \
+                      motor-data-producer motor-recorder motor-ai-client \
+                      motor-diag-service fault-tester spi-loopback \
+                      qnx-guest-conf"
+
+# ---------------------------------------------------------------------------
+# start-guest1.sh is written by this image's template
+# ---------------------------------------------------------------------------
+# It used to be an inline block in qnx-guest.build.in. It names the guest's own
+# address on the head unit's wire when it starts motor_diag_service, and that
+# value lives in the same fragment qnx-guest-image requires -- so this recipe
+# requires it too rather than either duplicating the address or reaching into
+# the other recipe for it. One file, two consumers, no way for them to disagree.
+#
+# An empty QNX_GUEST_LAN_IP is a supported answer, not a missing one: the script
+# tests for it and simply does not start the service, because a guest that is
+# not on that wire has nobody to serve.
+require conf/qnx-guest-vdevs.inc
+
+# The template is checksummed, but the values substituted into it are not -- so
+# without this, changing the address in local.conf would leave rootfs.img on the
+# old one and the head unit would look for a service that never appears.
+do_generate_rootfs_buildfile[vardeps] += "QNX_GUEST_LAN_IP"
 
 # Fixed at 8G rather than "auto".
 #

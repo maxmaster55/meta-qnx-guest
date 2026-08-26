@@ -65,6 +65,201 @@
 /qt-cluster=@QNX_ROOTFS_SYSROOT@/qt-cluster
 
 ################################################################################
+## graphics-virtio-start.sh, from qnx-guest-conf. Read by start-guest1.sh below,
+## which runs long after .rootfs-mount.sh -- so it does not need to be in the
+## IFS, and here the retry logic can be changed on a running guest.
+##
+## The three Screen configurations that go with it are further down, after the
+## /usr tree mapping -- see the note there for why they cannot be here.
+################################################################################
+[type=dir] /scripts
+[perms=0755] /scripts/graphics-virtio-start.sh = @QNX_ROOTFS_SYSROOT@/guest-conf/graphics-virtio-start.sh
+
+################################################################################
+## Bring up the cluster demo, in the order the pieces need each other.
+##
+## This is the reference guest's /scripts/start-guest1.sh. It is one script and
+## not five boot-script lines because every step here can fail for a reason
+## worth reading, and because it is run after the host is known to be ready --
+## the graphics step needs the host's Screen already up, which the guest cannot
+## check for and the host cannot promise at any particular time.
+##
+## Order matters and the sleeps are the reference's:
+##   producer first, since the client reads the shared memory it creates
+##   client next, one second later, so the segment exists before it looks
+##   graphics last, because Qt needs /dev/screen before it can open a window
+##
+## The Qt tree is at /qt-cluster (from rootfs.img), not the monorepo's
+## /QT_Demo_APP -- run.sh resolves its own directory, so the tree relocated
+## cleanly and only this path had to follow it.
+##
+## graphics-virtio-start.sh keeps its output, unlike the reference, which sent
+## it to /dev/null. It is the step that retries, and the one whose failure looks
+## from the outside like nothing more than a screen that stays dark.
+##
+## No '}' and no '${...}' anywhere below: an inline build-file block cannot
+## carry either, and a stray brace silently ends the block. Same rule for
+## mkqnx6fsimg as for mkifs.
+##
+## It is here rather than in the IFS because this is the file that decides what
+## the guest does at boot, and every application it names is on this disk with
+## it. In the IFS, changing an argument or an order meant a rebuild and a
+## reflash; here it is an edit in place.
+################################################################################
+[perms=0744] /scripts/start-guest1.sh = {
+#!/bin/sh
+
+echo "=== Starting motor_data_producer ==="
+# -w: poll /etc/motor/config.json's mtime (~1 Hz) and reload on change, so a
+# config edit takes effect without a restart -- and without the restart that
+# would otherwise orphan every /motor_ctrl consumer's mapping (see
+# motor_diag_service's recheck_motor_shm() for what that costs when it does
+# happen: it now recovers, but a config change is not a reason to pay for it).
+#
+# It pairs with where that file now lives. config.json is a record in this
+# template, on the writable disk, so editing it on a running guest is an edit
+# in place -- and with -w the producer picks the change up on its own. In the
+# IFS the file was read-only, which made a live reload something you could not
+# reach without a rebuild and a reflash.
+motor_data_producer -w /etc/motor/config.json &
+
+sleep 1
+
+echo "=== Starting motor_recorder ==="
+# -d is where the CSVs go. /record is a directory on the data disk, created by
+# qnx-guest-rootfs, because the IFS is read-only and /tmp -- the recorder's own
+# default -- is RAM here, so anything written there is gone at the next reboot.
+#
+# mkdir anyway: the disk is union-mounted at /, and a guest booted without it
+# has no /record at all. Without this the recorder starts, fails on every write
+# and says so once per file.
+mkdir -p /record
+motor_recorder -d /record &
+
+sleep 1
+
+## The head unit's SOME/IP service. Started before motor_ai_client only because
+## its offers are cheap and the head unit may be waiting; neither depends on the
+## other's ordering.
+##
+## The address is the guest's own on the head unit's wire, and it is passed
+## rather than discovered: it is what goes into the SD offer, so getting it from
+## the interface would mean picking one of two addresses and being right by
+## luck. Empty means the guest is not on that wire, and there is nobody to
+## serve -- so it is simply not started.
+if test -n "@QNX_GUEST_LAN_IP@"
+then
+    echo "=== Starting motor_diag_service on @QNX_GUEST_LAN_IP@ ==="
+    until motor_diag_service @QNX_GUEST_LAN_IP@ 10
+    do
+        echo "motor_diag_service exited $? -- restarting in 2s"
+        sleep 2
+    done &
+else
+    echo "=== motor_diag_service not started (no LAN address configured) ==="
+fi
+
+echo "=== Starting motor_ai_client ==="
+export VSOMEIP_CONFIGURATION=/Motor_AI_Client/vsomeip.json
+## Its configuration is /etc/motor-ai-client/client.conf, shipped in the IFS by
+## the motor-ai-client recipe. No environment variable for it here: that path
+## is the client's own default, so the file is what changes the window size and
+## the timeouts, not this script.
+##
+## Output kept, where it used to go to /dev/null. That was right when a window
+## was 200 rows -- the producer publishes a block every 10ms, so the client
+## logged a completed window about a hundred times a second and nothing else in
+## the console could be read past it. A window is 26000 rows now, which is one
+## line per 1.3 seconds of motor plus however long inference takes, and the
+## lines it prints are the ones worth having at boot: which config it read,
+## whether it is still waiting for the AI server on the Linux guest, how many
+## shm blocks it has dropped, and the three verdicts per window.
+##
+## Restarted if it fails, which is what the Linux half gets from systemd's
+## Restart=on-failure and this had no equivalent of. It matters most at boot:
+## the client gives the producer 10 seconds to create /motor_ctrl and exits if
+## it never appears, and before this that left a booted guest with a producer,
+## a recorder and no AI client until someone noticed.
+##
+## `until` and not `while true`, so this stops when the client exits 0. That is
+## a deliberate shutdown -- SIGTERM and SIGINT both return 0 -- and restarting
+## it then would make the client unkillable.
+until /Motor_AI_Client/motor_ai_client
+do
+    echo "motor_ai_client exited $? -- restarting in 2s"
+    sleep 2
+done &
+
+sleep 1
+
+echo "=== Starting graphics ==="
+# In the foreground and its result checked, because the cluster cannot start
+# without it. graphics-virtio-start.sh does the waiting itself -- it blocks on
+# /dev/dri/card0, then relaunches screen up to five times to get past an EGL
+# race with the freshly-attached virtio-gpu -- and returns non-zero when
+# /dev/screen never appears.
+#
+# Ignoring that was the bug: Qt would start anyway, find no Screen, and fail at
+# the point it tried to open a window. The failure then reads as a Qt problem
+# and is not one, and the real message has already scrolled past.
+if ! /scripts/graphics-virtio-start.sh; then
+    echo "ERROR: graphics did not come up -- NOT starting the cluster."
+    echo "       Check the host is running Screen: the GPU vdev gates its EGL"
+    echo "       context on the host's, and qvm exits if a guest asks first."
+    echo "       Then re-run /scripts/start-guest1.sh"
+    exit 1
+fi
+
+echo "=== Starting the Qt cluster ==="
+cd /qt-cluster && exec sh run.sh >/dev/null 2>&1
+}
+
+################################################################################
+## The applications, which used to be in the IFS.
+##
+## start-guest1.sh launches every one of these, and it runs long after
+## .rootfs-mount.sh has union-mounted this disk at / -- so /bin, /usr/bin and
+## /etc here merge with the IFS's and each is found under the name the script
+## always used. The IFS keeps only what runs before that mount (rpi-gpio, the
+## BSP drivers) and the libraries these link (libmosquitto, the SOME/IP stack).
+##
+## /bin whole rather than file by file, matching /usr below: motor_recorder and
+## spi_loopback are staged in the processor tree's bin, and naming a tree is one
+## line that stays correct when the next application is added to
+## QNX_ROOTFS_INSTALL. motor_data_producer, motor_diag_service, diag_probe and
+## fault_tester need no line at all -- they stage into the processor tree's
+## usr/bin, which the /usr mapping below already carries.
+################################################################################
+/bin=@QNX_ROOTFS_SYSROOT@/@QNX_PROCESSOR@/bin
+
+################################################################################
+## The files that are on no search path, so no tree mapping reaches them. These
+## mirror, record for record, the QNX_IFS_EXTRA_ENTRIES their recipes declare
+## for an image that installs them into an IFS instead.
+##
+## /etc/motor/config.json is motor_data_producer's DEFAULT_CONFIG_PATH, and
+## start-guest1.sh passes it explicitly as well.
+##
+## motor_ai_client is a directory, not a bin/ binary: it reads
+## /Motor_AI_Client/vsomeip.json through VSOMEIP_CONFIGURATION, which
+## start-guest1.sh exports by that absolute path, and its own default config is
+## /etc/motor-ai-client/client.conf. commonapi.ini is installed under both names
+## CommonAPI looks for -- [+dupignore] in the IFS records is an mkifs attribute
+## and has no counterpart here, which costs nothing: this filesystem is built
+## from scratch and there is no duplicate to ignore.
+################################################################################
+[type=dir] /etc/motor
+[perms=0644] /etc/motor/config.json = @QNX_ROOTFS_SYSROOT@/motor-data-producer/config.json
+
+[type=dir] /Motor_AI_Client
+[perms=0755] /Motor_AI_Client/motor_ai_client = @QNX_ROOTFS_SYSROOT@/motor-ai-client/motor_ai_client
+[perms=0644] /Motor_AI_Client/vsomeip.json = @QNX_ROOTFS_SYSROOT@/motor-ai-client/vsomeip.json
+[type=dir] /etc/motor-ai-client
+[perms=0644] /etc/motor-ai-client/client.conf = @QNX_ROOTFS_SYSROOT@/motor-ai-client/client.conf
+[perms=0644] /etc/commonapi.ini = @QNX_ROOTFS_SYSROOT@/motor-ai-client/commonapi.ini
+[perms=0644] /etc/commonapi4someip.ini = @QNX_ROOTFS_SYSROOT@/motor-ai-client/commonapi.ini
+
+################################################################################
 ## Contributed by QNX_ROOTFS_EXTRA -- the graphics stack and SOME/IP libraries
 ## land here as they come online. Empty unless something sets it.
 ################################################################################
@@ -80,5 +275,34 @@
 ## could keep correct.
 ################################################################################
 /usr=@QNX_ROOTFS_SYSROOT@/@QNX_PROCESSOR@/usr
+
+################################################################################
+## The Screen configurations, from qnx-guest-conf.
+##
+## AFTER the /usr mapping above, and that is the whole reason they are down here
+## rather than beside graphics-virtio-start.sh. That line maps a whole staged
+## tree onto /usr; naming files under /usr/share/screen before it would put two
+## records in the build file competing for the same directory. Placed after, the
+## tree lands first and these are added on top of it.
+##
+## Screen reads its configuration from /usr/share/screen by absolute path, and
+## graphics-virtio-start.sh names graphics-virtio-mmio.conf there, so the
+## destinations are not free choices. All three are shipped because which one
+## applies is a runtime decision: virtio-mmio drives the paravirtual GPU,
+## virtual-display renders offscreen, headless is for Screen clients with no
+## display at all.
+##
+## No [type=dir] /usr/share/screen. qnx-screen-virtio already stages that
+## directory -- it ships its own graphics-virtio-virgl*.conf and
+## graphics-virtio-gfxstream*.conf there -- so the /usr mapping creates it, and
+## declaring it again is what mkqnx6fsimg calls
+##
+##     Entry 'usr/share/screen' redefined
+##
+## The three files below do not collide: none of those names is one of ours.
+################################################################################
+[perms=0644] /usr/share/screen/graphics-virtio-mmio.conf = @QNX_ROOTFS_SYSROOT@/guest-conf/graphics-virtio-mmio.conf
+[perms=0644] /usr/share/screen/graphics-virtual-display.conf = @QNX_ROOTFS_SYSROOT@/guest-conf/graphics-virtual-display.conf
+[perms=0644] /usr/share/screen/graphics-headless.conf = @QNX_ROOTFS_SYSROOT@/guest-conf/graphics-headless.conf
 
 @QNX_ROOTFS_EXTRA@

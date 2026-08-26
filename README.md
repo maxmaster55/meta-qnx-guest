@@ -7,7 +7,7 @@ come from [meta-qnx-hyp](../meta-qnx-hyp).
 ## What it builds
 
 ```bash
-bitbake qnx-guest-image     # a bootable guest IFS: apps + the SOME/IP runtimes
+bitbake qnx-guest-image     # a bootable guest IFS: drivers + the SOME/IP runtimes
 bitbake spi-loopback        # SPI loopback test
 bitbake motor-ai-server     # CommonAPI/SOME-IP motor AI service (generators run at configure)
 bitbake motor-ai-client     # ...and its client
@@ -34,11 +34,22 @@ patch), `commonapi-core`, `commonapi-someip` and the native code generators — 
 
 ## The guest data disk
 
-An IFS is copied into guest RAM whole at boot, so the Qt payload (and, later, the graphics
-stack) cannot live in it. `qnx-guest-rootfs` builds `rootfs.img` — a bare QNX6 filesystem
-(via meta-qnx's `qnx-rootfs` class) carrying `qt-cluster`'s deploy tree at `/qt-cluster` —
-and three pieces wire it into a running guest, mirroring
-`qnx_guests/images/guest-1/`:
+An IFS is copied into guest RAM whole at boot and is read-only, so neither the Qt payload
+nor **any of the applications** live in it. `qnx-guest-rootfs` builds `rootfs.img` — a bare
+QNX6 filesystem (via meta-qnx's `qnx-rootfs` class) carrying `qt-cluster`'s deploy tree at
+`/qt-cluster`, the graphics stack, and `motor_data_producer`, `motor_recorder`,
+`motor_ai_client`, `motor_diag_service`, `fault_tester` and `spi_loopback`.
+
+That last part is about iteration speed, not size: changing one binary inside the IFS costs
+a full image rebuild and a reflash of the SD card, where on this disk it is one `scp` into
+the running guest. The mount is a union, so `/bin`, `/usr/bin` and `/etc` here merge with
+the IFS's and `start-guest1.sh` finds every name it always used. What stays in the IFS is
+what runs *before* `.rootfs-mount.sh` — `rpi-gpio`, `spi-dwc`, the BSP drivers — plus the
+libraries the applications link (`libmosquitto`, the SOME/IP runtime), which nobody
+iterates on. [applications.md](../meta-qnx-hyp/docs/applications.md#why-the-applications-are-not-in-the-ifs)
+has the full rule.
+
+Three pieces wire the disk into a running guest, mirroring `qnx_guests/images/guest-1/`:
 
 1. **The guest `.qvmconf`** attaches it as a `virtio-blk` vdev (`loc 0x1c0b0000`,
    `intr gic:45`, `hostdev rootfs.img`).
@@ -50,8 +61,10 @@ and three pieces wire it into a running guest, mirroring
    `.qvmconf` at `/guests/guest-1/` on the host data partition, and switches that partition
    to `auto` sizing so it grows to hold the ~366 MB image.
 
-Add the graphics stack (`qnx-screen-virtio`) or the SOME/IP libraries to the disk by adding
-them to `QNX_ROOTFS_INSTALL` in `qnx-guest-rootfs`, and routing them in its template.
+Add anything else to the disk by adding it to `QNX_ROOTFS_INSTALL` in `qnx-guest-rootfs`.
+A binary staged in the processor tree's `bin` or `usr/bin` needs nothing more — the
+template maps both trees whole. Anything on no search path, such as a config file under
+`/etc`, needs an explicit record there.
 
 This layer also **bbappends `qnx-host-data`** (from meta-qnx-hyp) to place all of the guest
 artifacts on the host's QNX6 data partition — the same paths the hypervisor project uses.

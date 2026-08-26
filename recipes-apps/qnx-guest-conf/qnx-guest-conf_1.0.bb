@@ -28,8 +28,8 @@ do_configure[noexec] = "1"
 do_compile[noexec] = "1"
 
 # /usr/share/screen and /scripts are not on any mkifs search path, so these are
-# staged into a private directory and placed explicitly below. The automatic
-# pass would warn about every one of them.
+# staged into a private directory and placed explicitly by whatever carries
+# them. The automatic pass would warn about every one of them.
 QNX_IFS_AUTO_ENTRIES = "0"
 
 QNX_GUEST_CONF_DIR = "${QNX_STAGE_DIR}/guest-conf"
@@ -47,18 +47,22 @@ do_install() {
 	install -m 0755 ${S}/display/graphics-virtio-start.sh      ${D}${QNX_GUEST_CONF_DIR}/
 }
 
-# Absolute sources: these have no bare-name search path to be found on.
+# No QNX_IFS_EXTRA_ENTRIES. All four files are on rootfs.img, placed by
+# qnx-guest-rootfs.build.in -- this recipe is in that image's
+# QNX_ROOTFS_INSTALL, not in qnx-guest-image's QNX_IFS_INSTALL.
 #
-# @QNX_IFS_ROOT@ (not ${...}) is deliberate -- it is expanded by the *image*
-# recipe when the fragment is merged, since the path depends on which image
-# installs this and is unknowable here.
+# Nothing here is needed before the disk is mounted. start-guest1.sh runs
+# /scripts/graphics-virtio-start.sh, and that is several lines below
+# /proc/boot/.rootfs-mount.sh in the boot script; drm-virtio, which the script
+# execs, is on the same disk already (qnx-screen-virtio, ~279MB of it).
+#
+# Putting them there is what makes the display tunable on a running guest. Which
+# of the three Screen configurations applies, and the retry logic in the startup
+# script, are exactly the things someone changes with a panel in front of them
+# -- and in a read-only IFS every one of those changes was an image rebuild and
+# a reflash of the SD card.
 #
 # Screen reads its configuration from /usr/share/screen, and
 # graphics-virtio-start.sh names graphics-virtio-mmio.conf there by absolute
-# path, so these destinations are not free choices.
-QNX_IFS_EXTRA_ENTRIES = "\
-/usr/share/screen/graphics-virtio-mmio.conf=@QNX_IFS_ROOT@/guest-conf/graphics-virtio-mmio.conf\n\
-/usr/share/screen/graphics-virtual-display.conf=@QNX_IFS_ROOT@/guest-conf/graphics-virtual-display.conf\n\
-/usr/share/screen/graphics-headless.conf=@QNX_IFS_ROOT@/guest-conf/graphics-headless.conf\n\
-[perms=0755] /scripts/graphics-virtio-start.sh=@QNX_IFS_ROOT@/guest-conf/graphics-virtio-start.sh\
-"
+# path, so those destinations are not free choices -- see the records in the
+# rootfs template.

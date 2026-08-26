@@ -38,12 +38,14 @@ QNX_IFS_TEMPLATE = "${S}/qnx-guest.build.in"
 # things that genuinely differ are the drivers (virtio rather than real
 # hardware) and which applications run.
 #
-# qnx-guest-conf, NOT qnx-host-conf. They fetch the same repository, but the
-# host component also carries the board's wifi configuration -- wpa_supplicant
-# .conf and the network PSK with it -- and a component is all-or-nothing, so
-# installing it here put the PSK inside a guest that has no radio. It also put
-# the host's own graphics-host-rpi5.conf and host-graphics-start.sh in, which
-# describe a display this guest cannot drive.
+# The guest's display configuration is qnx-guest-conf, NOT qnx-host-conf -- it
+# is on rootfs.img now (see above), but the distinction still holds wherever it
+# is installed. They fetch the same repository, but the host component also
+# carries the board's wifi configuration -- wpa_supplicant.conf and the network
+# PSK with it -- and a component is all-or-nothing, so installing it here put
+# the PSK inside a guest that has no radio. It also put the host's own
+# graphics-host-rpi5.conf and host-graphics-start.sh in, which describe a
+# display this guest cannot drive.
 #
 # Two BSPs, and both are needed for the same reason: this guest is handed real
 # hardware, not only virtual devices.
@@ -61,13 +63,49 @@ QNX_IFS_TEMPLATE = "${S}/qnx-guest.build.in"
 # point: a BSP ships far more than any one image should carry.
 QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
                    qnx-net-tools qnx-diag-tools qnx-fs-tools qnx-login \
-                   qnx-ssh qnx-usb qnx-screen qnx-gfx-demos qnx-guest-conf \
+                   qnx-ssh qnx-usb qnx-screen qnx-gfx-demos \
                    qnx-hyp-guest-bsp qnx-rpi5-bsp \
-                   spi-loopback packagegroup-qnx-hyp-common \
-                   motor-ai-client motor-data-producer \
-                   motor-recorder mosquitto fault-tester \
-                   motor-diag-service \
+                   packagegroup-qnx-hyp-common \
+                   mosquitto \
                    packagegroup-qnx-someip"
+
+# ---------------------------------------------------------------------------
+# THE APPLICATIONS ARE NOT IN THE LIST ABOVE
+# ---------------------------------------------------------------------------
+# motor-ai-client, motor-data-producer, motor-recorder, motor-diag-service,
+# fault-tester and spi-loopback are qnx-guest-rootfs's QNX_ROOTFS_INSTALL now,
+# so they ride on rootfs.img -- the writable virtio-blk disk this guest
+# union-mounts at / -- rather than in this RAM-resident, read-only IFS.
+#
+# So is their CONFIGURATION, and so is qnx-guest-conf, which is why that is gone
+# from the list above too: its three Screen configurations and
+# graphics-virtio-start.sh are read by start-guest1.sh, which runs well below
+# .rootfs-mount.sh. A binary that can be replaced with an scp is not much use if
+# the file that decides how it starts still costs a reflash.
+#
+# The reason is the one that moved hms off the host's IFS: an application here
+# costs a full image rebuild and a reflash of the card to change one binary,
+# which is the price of fixing a driver paid for code that changes every day.
+# On rootfs.img it is an scp into the running guest.
+#
+# The mount is a union, so nothing about the paths changes: /bin, /usr/bin and
+# /etc on the disk merge with the IFS's, and start-guest1.sh still launches
+# `motor_data_producer /etc/motor/config.json`, `motor_recorder -d /record` and
+# /Motor_AI_Client/motor_ai_client by the names it always used.
+#
+# The line is boot order, and it is drawn at /proc/boot/.rootfs-mount.sh in the
+# startup script. What stays here runs before that line or is needed to reach
+# it: rpi-gpio (via packagegroup-qnx-hyp-common) and the two BSPs come up with
+# SPI and GPIO several lines earlier, and the SDP components carry the boot
+# itself. start-guest1.sh runs long after the mount, which is what makes moving
+# everything it launches safe.
+#
+# The libraries stay too, and deliberately -- they are not what is being
+# iterated on. mosquitto is ~100KB and motor_recorder links libmosquitto.so.1;
+# an image with the binary and not the library gets a process that dies at
+# startup with ELIBACC, naming nothing useful. packagegroup-qnx-someip is the
+# same story at ~9.5MB for motor_ai_client and motor_diag_service. Both resolve
+# identically whichever filesystem the binary loading them came from.
 
 # motor-diag-service is what the AAOS head unit talks to: it publishes a 1 Hz
 # fault classification and answers capture requests over SOME/IP, reading the
@@ -87,10 +125,12 @@ QNX_IFS_INSTALL = "qnx-base-runtime qnx-block qnx-io-sock qnx-pci \
 # host -- the binary links libmosquitto.so.1, and an image with one and not the
 # other gets a process that dies at startup with ELIBACC.
 #
-# In the IFS rather than on rootfs.img, unlike the Qt tree: libmosquitto is
-# ~100KB, which an IFS carries without complaint, and the guest rootfs template
-# maps only the processor tree's usr/ -- a library staged into lib/ would not
-# land there at all.
+# The two are split across the two filesystems now, which is the split this
+# image draws everywhere: the binary is on rootfs.img because it is iterated on,
+# the library stays in the IFS because it is not. libmosquitto is ~100KB, which
+# an IFS carries without complaint, and it is staged into the processor tree's
+# lib/ -- which the rootfs template does not map, so leaving it here is also the
+# only place it currently lands.
 #
 # motor-ai-server is deliberately NOT here. The pair is split across the two
 # guests: the client runs on QNX because that is where the SPI motor data
