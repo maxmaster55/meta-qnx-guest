@@ -269,6 +269,16 @@ do_compile[noexec] = "1"
 require conf/hms-ssh-key.inc
 QNX_SSH_AUTHORIZED_KEYS += "${QNX_HMS_PUBKEY}"
 
+# UsePAM off for this guest specifically -- see the long comment on
+# QNX_SSH_USE_PAM in qnx-ssh_1.0.bb for the failure this works around: sshd on
+# this guest closed every connection, no response, the instant a credential
+# (key or password, tried separately) was submitted, which is PAM's
+# account/session phase and not either auth method itself. The host runs the
+# identical PAM stack and has never shown it. hms's only login path here is
+# its key, so losing password auth (UsePAM's other job -- see that comment)
+# costs this guest nothing.
+QNX_SSH_USE_PAM = "no"
+
 # The second key the reference authorises on this guest and on no other. See
 # the fragment for what is known about it, which is not much -- it is carried to
 # match, not because anything here needs it.
